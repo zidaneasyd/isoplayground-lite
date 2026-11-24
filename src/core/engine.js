@@ -2,6 +2,7 @@ import { GameLoop } from "./game-loop.js";
 import { World } from "../world/world.js";
 import { Camera } from "../camera/camera.js";
 import { Renderer } from "../rendering/renderer.js";
+import { screenToGrid } from "../world/coordinates.js";
 
 export class Engine {
   constructor(canvas, config) {
@@ -26,11 +27,13 @@ export class Engine {
     this.dragPointerId = null;
     this.lastPointerX = 0;
     this.lastPointerY = 0;
+    this.pointerGrid = null;
 
     this.resize = this.resize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
     this.onPointerEnd = this.onPointerEnd.bind(this);
+    this.onPointerLeave = this.onPointerLeave.bind(this);
     this.onWheel = this.onWheel.bind(this);
 
     window.addEventListener("resize", this.resize);
@@ -38,6 +41,7 @@ export class Engine {
     this.canvas.addEventListener("pointermove", this.onPointerMove);
     this.canvas.addEventListener("pointerup", this.onPointerEnd);
     this.canvas.addEventListener("pointercancel", this.onPointerEnd);
+    this.canvas.addEventListener("pointerleave", this.onPointerLeave);
     this.canvas.addEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
 
@@ -71,7 +75,47 @@ export class Engine {
     this.render();
   }
 
+  /** Convert client (browser-window) coordinates into world tile coordinates. */
+  screenToGrid(clientX, clientY) {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+
+    const bounds = this.canvas.getBoundingClientRect();
+    if (!bounds || bounds.width <= 0 || bounds.height <= 0) return null;
+
+    // Renderer coordinates use CSS pixels; account for any CSS scaling of the canvas.
+    const screenX = (clientX - bounds.left) * this.renderer.width / bounds.width;
+    const screenY = (clientY - bounds.top) * this.renderer.height / bounds.height;
+
+    const transform = {
+      viewportWidth: this.renderer.width,
+      viewportHeight: this.renderer.height,
+      camera: this.camera,
+      world: this.world,
+      elevationStep: this.config.tile.elevationStep
+    };
+
+    // Tiles are drawn in diagonal order. Test them in reverse so overlapping
+    // elevated tiles resolve to the last (visually topmost) tile rendered.
+    const tiles = [...this.world.getTiles()];
+    for (let index = tiles.length - 1; index >= 0; index--) {
+      const tile = tiles[index];
+      const tileCoordinates = screenToGrid(
+        screenX,
+        screenY,
+        this.config.tile.width,
+        this.config.tile.height,
+        { ...transform, elevation: tile.elevation }
+      );
+
+      if (tileCoordinates?.x === tile.x && tileCoordinates?.y === tile.y) {
+        return tileCoordinates;
+      }
+    }
+    return null;
+  }
+
   onPointerDown(event) {
+    this.pointerGrid = this.screenToGrid(event.clientX, event.clientY);
     if (event.button !== 0 || this.dragPointerId !== null) return;
     if (event.isPrimary === false || !Number.isFinite(event.pointerId)) return;
 
@@ -83,6 +127,7 @@ export class Engine {
   }
 
   onPointerMove(event) {
+    this.pointerGrid = this.screenToGrid(event.clientX, event.clientY);
     if (event.pointerId !== this.dragPointerId) return;
 
     const deltaX = event.clientX - this.lastPointerX;
@@ -90,7 +135,15 @@ export class Engine {
     this.lastPointerX = event.clientX;
     this.lastPointerY = event.clientY;
 
-    if (this.camera.panBy(deltaX, deltaY, this.getCameraBounds())) this.render();
+    if (this.camera.panBy(deltaX, deltaY, this.getCameraBounds())) {
+      this.render();
+      // Re-evaluate against the camera after the pan has been applied.
+      this.pointerGrid = this.screenToGrid(event.clientX, event.clientY);
+    }
+  }
+
+  onPointerLeave() {
+    if (this.dragPointerId === null) this.pointerGrid = null;
   }
 
   onPointerEnd(event) {
@@ -116,6 +169,7 @@ export class Engine {
 
     if (changed) {
       this.camera.constrainToVisibleTile(this.getCameraBounds());
+      this.pointerGrid = this.screenToGrid(event.clientX, event.clientY);
       this.render();
     }
   }
@@ -146,9 +200,11 @@ export class Engine {
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerEnd);
     this.canvas.removeEventListener("pointercancel", this.onPointerEnd);
+    this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.canvas.removeEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.canvas.classList?.remove("is-dragging");
     this.dragPointerId = null;
+    this.pointerGrid = null;
   }
 }
