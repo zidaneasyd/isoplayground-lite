@@ -7,7 +7,7 @@ import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
 
 export class Engine {
-  constructor(canvas, config) {
+  constructor(canvas, config, { onSelectionChange = null } = {}) {
     if (!canvas || typeof canvas.getContext !== "function") {
       throw new TypeError("Engine membutuhkan elemen canvas yang valid.");
     }
@@ -16,7 +16,12 @@ export class Engine {
     this.ctx = canvas.getContext("2d");
     if (!this.ctx) throw new Error("Canvas 2D context tidak tersedia.");
 
+    if (onSelectionChange !== null && typeof onSelectionChange !== "function") {
+      throw new TypeError("onSelectionChange harus berupa function atau null.");
+    }
+
     this.config = config;
+    this.onSelectionChange = onSelectionChange;
     this.world = new World(config.world);
     this.camera = new Camera(config.camera);
     this.renderer = new Renderer(this.ctx, config);
@@ -238,6 +243,7 @@ export class Engine {
         // A small tolerance accommodates pointer jitter without treating a pan as a click.
         if (clickDistance <= 4) {
           selectionChanged = this.tileSelection.select(this.tileHover.hoveredTile);
+          if (selectionChanged) this.onSelectionChange?.(this.tileSelection.selectedTile);
         }
       }
     }
@@ -268,6 +274,18 @@ export class Engine {
 
   update(_deltaTime) {
     // Reserved for world/entity updates as gameplay systems are introduced.
+  }
+
+  /** Recalculates hover and redraws after a tile's inspected properties change. */
+  refreshWorldView() {
+    if (this.destroyed) return;
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    }
+    this.render();
   }
 
   render() {
@@ -302,6 +320,6 @@ export class Engine {
     this.dragPointerId = null;
     this.pointerDownPosition = null;
     this.clearHover();
-    this.tileSelection.clear();
+    if (this.tileSelection.clear()) this.onSelectionChange?.(null);
   }
 }

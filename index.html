@@ -8,6 +8,61 @@
 </head>
 <body>
   <canvas id="world" aria-label="Dunia isometrik"></canvas>
+
+  <aside id="tile-inspector" class="tile-inspector" aria-labelledby="tile-inspector-title">
+    <header class="tile-inspector__header">
+      <div>
+        <p class="tile-inspector__eyebrow">WORLD TOOLS / LEVEL 2</p>
+        <h1 id="tile-inspector-title">Tile Inspector</h1>
+      </div>
+      <span class="tile-inspector__status" data-inspector-status aria-live="polite">NO TILE SELECTED</span>
+    </header>
+
+    <div class="tile-inspector__empty" data-inspector-empty>
+      <span class="tile-inspector__empty-icon" aria-hidden="true">◇</span>
+      <strong>No tile selected</strong>
+      <p>Klik salah satu diamond pada grid untuk melihat dan mengedit datanya.</p>
+    </div>
+
+    <section class="tile-inspector__content" data-inspector-content hidden aria-label="Selected tile properties">
+      <div class="tile-inspector__identity">
+        <span class="tile-inspector__field-label">TILE ID</span>
+        <strong data-value="id">—</strong>
+      </div>
+
+      <div class="tile-inspector__coordinates">
+        <span class="tile-inspector__field-label">GRID COORDINATES</span>
+        <strong data-value="coordinates">—</strong>
+      </div>
+
+      <label class="tile-inspector__field">
+        <span>
+          <strong>Elevation</strong>
+          <small>Ketinggian tile dalam unit dunia</small>
+        </span>
+        <input data-input="elevation" type="number" step="any" inputmode="decimal" disabled>
+      </label>
+
+      <label class="tile-inspector__field">
+        <span>
+          <strong>Terrain</strong>
+          <small>Identitas permukaan tile</small>
+        </span>
+        <input data-input="terrain" type="text" maxlength="64" required disabled>
+      </label>
+
+      <label class="tile-inspector__toggle">
+        <span>
+          <strong>Walkable</strong>
+          <small>Tile dapat dilalui</small>
+        </span>
+        <input data-input="walkable" type="checkbox" disabled>
+      </label>
+
+      <p class="tile-inspector__footnote">Perubahan diterapkan langsung ke data tile.</p>
+    </section>
+  </aside>
+
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

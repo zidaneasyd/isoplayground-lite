@@ -11,7 +11,9 @@ body {
 }
 
 body {
-  font-family: sans-serif;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #eee9df;
+  background: #141414;
 }
 
 #world {
@@ -24,4 +26,198 @@ body {
 
 #world.is-dragging {
   cursor: grabbing;
+}
+
+.tile-inspector {
+  position: fixed;
+  z-index: 2;
+  top: 18px;
+  right: 18px;
+  width: min(320px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(221, 190, 126, 0.24);
+  border-radius: 14px;
+  background: rgba(25, 24, 22, 0.96);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+}
+
+.tile-inspector__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
+}
+
+.tile-inspector__eyebrow,
+.tile-inspector__field-label {
+  margin: 0;
+  color: #b69a62;
+  font-size: 9px;
+  font-weight: 750;
+  letter-spacing: 0.14em;
+}
+
+.tile-inspector h1 {
+  margin: 5px 0 0;
+  color: #f5f0e7;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+
+.tile-inspector__status {
+  flex: 0 0 auto;
+  margin-top: 3px;
+  padding: 5px 7px;
+  border: 1px solid rgba(182, 154, 98, 0.25);
+  border-radius: 5px;
+  color: #cbb98f;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.tile-inspector__empty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 28px 12px 22px;
+  text-align: center;
+}
+
+.tile-inspector__empty[hidden],
+.tile-inspector__content[hidden] {
+  display: none;
+}
+
+.tile-inspector__empty-icon {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid rgba(182, 154, 98, 0.3);
+  border-radius: 10px;
+  color: #c4a66b;
+  font-size: 25px;
+}
+
+.tile-inspector__empty strong {
+  color: #e8e0d2;
+  font-size: 13px;
+}
+
+.tile-inspector__empty p {
+  max-width: 235px;
+  margin: 0;
+  color: #979087;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.tile-inspector__content {
+  display: grid;
+  gap: 12px;
+  padding-top: 15px;
+}
+
+.tile-inspector__identity,
+.tile-inspector__coordinates {
+  display: grid;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.tile-inspector__identity strong,
+.tile-inspector__coordinates strong {
+  color: #e9e2d7;
+  font-size: 12px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.tile-inspector__field,
+.tile-inspector__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  min-height: 48px;
+}
+
+.tile-inspector__field > span,
+.tile-inspector__toggle > span {
+  display: grid;
+  gap: 3px;
+}
+
+.tile-inspector__field strong,
+.tile-inspector__toggle strong {
+  color: #e8e1d7;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tile-inspector__field small,
+.tile-inspector__toggle small {
+  color: #8f8980;
+  font-size: 10px;
+}
+
+.tile-inspector input[type="number"],
+.tile-inspector input[type="text"] {
+  width: 112px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  border: 1px solid #4b4438;
+  border-radius: 6px;
+  outline: none;
+  color: #f0e8da;
+  background: #211f1b;
+  font: inherit;
+  font-size: 12px;
+}
+
+.tile-inspector input[type="number"]:focus,
+.tile-inspector input[type="text"]:focus {
+  border-color: #b69a62;
+  box-shadow: 0 0 0 2px rgba(182, 154, 98, 0.14);
+}
+
+.tile-inspector input:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.tile-inspector input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #b69a62;
+}
+
+.tile-inspector__footnote {
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: #8f8980;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+@media (max-width: 540px) {
+  .tile-inspector {
+    top: 10px;
+    right: 10px;
+    width: min(300px, calc(100vw - 20px));
+    max-height: min(70vh, 520px);
+    padding: 14px;
+  }
 }

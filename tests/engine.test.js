@@ -493,3 +493,59 @@ test("engine does not select on pointer cancellation and clears selection on des
     else globalThis.window = originalWindow;
   }
 });
+
+test("engine notifies the inspector on selection changes and can refresh after tile edits", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners, calls } = makeCanvas();
+    const selectionEvents = [];
+    const engine = new Engine(canvas, CONFIG, {
+      onSelectionChange: (tile) => selectionEvents.push(tile?.id ?? null)
+    });
+    const tile = engine.world.getTile(6, 6);
+    const point = getTileClientCenter(engine, canvas, tile);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 41, ...point });
+    listeners.get("pointerup")({ pointerId: 41, type: "pointerup", ...point });
+    assert.equal(engine.getSelectedTile(), tile);
+    assert.deepEqual(selectionEvents, [tile.id]);
+
+    const beforeRefresh = calls.filter(([name]) => name === "clearRect").length;
+    tile.elevation = 2;
+    engine.refreshWorldView();
+    assert.equal(calls.filter(([name]) => name === "clearRect").length, beforeRefresh + 1);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 42, clientX: 51, clientY: 101 });
+    listeners.get("pointerup")({ pointerId: 42, type: "pointerup", clientX: 51, clientY: 101 });
+    assert.equal(engine.getSelectedTile(), null);
+    assert.deepEqual(selectionEvents, [tile.id, null]);
+
+    const pointAfterElevationEdit = getTileClientCenter(engine, canvas, tile);
+    listeners.get("pointerdown")({ button: 0, pointerId: 43, ...pointAfterElevationEdit });
+    listeners.get("pointerup")({ pointerId: 43, type: "pointerup", ...pointAfterElevationEdit });
+    assert.equal(engine.getSelectedTile(), tile);
+    engine.destroy();
+    assert.equal(selectionEvents.at(-1), null);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine rejects an invalid selection callback", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = { devicePixelRatio: 1, addEventListener: () => {}, removeEventListener: () => {} };
+  try {
+    const { canvas } = makeCanvas();
+    assert.throws(() => new Engine(canvas, CONFIG, { onSelectionChange: true }), TypeError);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
