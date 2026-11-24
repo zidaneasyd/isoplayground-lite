@@ -1,16 +1,22 @@
-* { box-sizing: border-box; }
-html, body {
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
   width: 100%;
   height: 100%;
   margin: 0;
   overflow: hidden;
-  background: #000000;
 }
-body { font-family: sans-serif; }
+
+body {
+  font-family: sans-serif;
+}
+
 #world {
   display: block;
   width: 100%;
   height: 100%;
-  background: #000000;
   touch-action: none;
 }
