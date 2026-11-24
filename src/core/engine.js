@@ -2,6 +2,8 @@ import { GameLoop } from "./game-loop.js";
 import { World } from "../world/world.js";
 import { Camera } from "../camera/camera.js";
 import { Renderer } from "../rendering/renderer.js";
+import { screenToGrid, screenToTile } from "../world/coordinates.js";
+import { TileHover } from "../interaction/tile-hover.js";
 
 export class Engine {
   constructor(canvas, config) {
@@ -17,6 +19,8 @@ export class Engine {
     this.world = new World(config.world);
     this.camera = new Camera(config.camera);
     this.renderer = new Renderer(this.ctx, config);
+    this.tileHover = new TileHover();
+    this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
       () => this.render()
@@ -30,12 +34,14 @@ export class Engine {
     this.resize = this.resize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
     this.onPointerMove = this.onPointerMove.bind(this);
+    this.onPointerLeave = this.onPointerLeave.bind(this);
     this.onPointerEnd = this.onPointerEnd.bind(this);
     this.onWheel = this.onWheel.bind(this);
 
     window.addEventListener("resize", this.resize);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
     this.canvas.addEventListener("pointermove", this.onPointerMove);
+    this.canvas.addEventListener("pointerleave", this.onPointerLeave);
     this.canvas.addEventListener("pointerup", this.onPointerEnd);
     this.canvas.addEventListener("pointercancel", this.onPointerEnd);
     this.canvas.addEventListener("lostpointercapture", this.onPointerEnd);
@@ -53,6 +59,94 @@ export class Engine {
     };
   }
 
+  /**
+   * Snapshot parameter tampilan yang dibutuhkan oleh transformasi koordinat.
+   */
+  getView() {
+    return {
+      camera: this.camera,
+      world: this.world,
+      tile: this.config.tile,
+      viewportWidth: this.renderer.width,
+      viewportHeight: this.renderer.height
+    };
+  }
+
+  /** Faktor konversi delta pointer layar ke unit CSS yang dipakai Renderer. */
+  getCanvasClientScale() {
+    const rect = this.canvas.getBoundingClientRect();
+    if (
+      !rect || !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+      rect.width <= 0 || rect.height <= 0 ||
+      !Number.isFinite(this.renderer.width) || !Number.isFinite(this.renderer.height) ||
+      this.renderer.width <= 0 || this.renderer.height <= 0
+    ) return { x: 1, y: 1 };
+
+    return {
+      x: this.renderer.width / rect.width,
+      y: this.renderer.height / rect.height
+    };
+  }
+
+  /**
+   * Mengubah clientX/clientY menjadi koordinat CSS Canvas.
+   * Skala bounding rect turut diperhitungkan agar tetap akurat saat elemen
+   * Canvas diubah ukurannya oleh CSS.
+   */
+  clientToCanvas(clientX, clientY) {
+    if (!Number.isFinite(clientX) || !Number.isFinite(clientY)) return null;
+
+    const rect = this.canvas.getBoundingClientRect();
+    if (
+      !rect || !Number.isFinite(rect.left) || !Number.isFinite(rect.top) ||
+      !Number.isFinite(rect.width) || !Number.isFinite(rect.height) ||
+      rect.width <= 0 || rect.height <= 0 ||
+      !Number.isFinite(this.renderer.width) || !Number.isFinite(this.renderer.height) ||
+      this.renderer.width <= 0 || this.renderer.height <= 0
+    ) return null;
+
+    const relativeX = clientX - rect.left;
+    const relativeY = clientY - rect.top;
+    if (relativeX < 0 || relativeY < 0 || relativeX > rect.width || relativeY > rect.height) {
+      return null;
+    }
+
+    const scale = this.getCanvasClientScale();
+    return { x: relativeX * scale.x, y: relativeY * scale.y };
+  }
+
+  /** Returns the persistent tile currently under the pointer, if any. */
+  getHoveredTile() {
+    return this.tileHover.hoveredTile;
+  }
+
+  /** Updates hover using client coordinates and the current camera transform. */
+  updateHoverAtClientPoint(clientX, clientY) {
+    this.lastPointerClientPosition = { x: clientX, y: clientY };
+    const point = this.clientToCanvas(clientX, clientY);
+    if (!point) return this.tileHover.clear();
+    return this.tileHover.update(point.x, point.y, this.getView());
+  }
+
+  clearHover() {
+    this.lastPointerClientPosition = null;
+    return this.tileHover.clear();
+  }
+
+  /** Koordinat grid kontinu di bawah pointer, atau null bila di luar Canvas. */
+  getGridAtClient(clientX, clientY) {
+    const point = this.clientToCanvas(clientX, clientY);
+    if (!point) return null;
+    return screenToGrid(point.x, point.y, this.getView());
+  }
+
+  /** Tile integer di bawah pointer, atau null bila di luar dunia/Canvas. */
+  getTileAtClient(clientX, clientY) {
+    const point = this.clientToCanvas(clientX, clientY);
+    if (!point) return null;
+    return screenToTile(point.x, point.y, this.getView());
+  }
+
   resize() {
     if (this.destroyed) return;
 
@@ -68,6 +162,12 @@ export class Engine {
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.renderer.setViewport(width, height);
     this.camera.constrainToVisibleTile(this.getCameraBounds());
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    }
     this.render();
   }
 
@@ -80,17 +180,28 @@ export class Engine {
     this.lastPointerY = event.clientY;
     this.canvas.classList?.add("is-dragging");
     this.canvas.setPointerCapture?.(event.pointerId);
+    if (this.updateHoverAtClientPoint(event.clientX, event.clientY)) this.render();
   }
 
   onPointerMove(event) {
-    if (event.pointerId !== this.dragPointerId) return;
+    if (this.dragPointerId !== null && event.pointerId !== this.dragPointerId) return;
 
-    const deltaX = event.clientX - this.lastPointerX;
-    const deltaY = event.clientY - this.lastPointerY;
-    this.lastPointerX = event.clientX;
-    this.lastPointerY = event.clientY;
+    let cameraChanged = false;
+    if (event.pointerId === this.dragPointerId) {
+      const scale = this.getCanvasClientScale();
+      const deltaX = (event.clientX - this.lastPointerX) * scale.x;
+      const deltaY = (event.clientY - this.lastPointerY) * scale.y;
+      this.lastPointerX = event.clientX;
+      this.lastPointerY = event.clientY;
+      cameraChanged = this.camera.panBy(deltaX, deltaY, this.getCameraBounds());
+    }
 
-    if (this.camera.panBy(deltaX, deltaY, this.getCameraBounds())) this.render();
+    const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+    if (cameraChanged || hoverChanged) this.render();
+  }
+
+  onPointerLeave() {
+    if (this.clearHover()) this.render();
   }
 
   onPointerEnd(event) {
@@ -98,26 +209,35 @@ export class Engine {
 
     this.dragPointerId = null;
     this.canvas.classList?.remove("is-dragging");
+
+    let hoverChanged = false;
+    if (event.type === "pointercancel" || event.type === "lostpointercapture") {
+      hoverChanged = this.clearHover();
+    } else if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+      hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+    }
+    if (hoverChanged) this.render();
   }
 
   onWheel(event) {
     if (!Number.isFinite(event.deltaY) || event.deltaY === 0) return;
     event.preventDefault();
 
-    const bounds = this.canvas.getBoundingClientRect();
+    const point = this.clientToCanvas(event.clientX, event.clientY);
+    if (!point) return;
+
     const factor = Math.exp(-event.deltaY * this.camera.wheelZoomSpeed);
     const changed = this.camera.zoomAt(
-      event.clientX - bounds.left,
-      event.clientY - bounds.top,
+      point.x,
+      point.y,
       factor,
       this.renderer.width,
       this.renderer.height
     );
 
-    if (changed) {
-      this.camera.constrainToVisibleTile(this.getCameraBounds());
-      this.render();
-    }
+    if (changed) this.camera.constrainToVisibleTile(this.getCameraBounds());
+    const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+    if (changed || hoverChanged) this.render();
   }
 
   update(_deltaTime) {
@@ -125,7 +245,9 @@ export class Engine {
   }
 
   render() {
-    this.renderer.render(this.world, this.camera);
+    this.renderer.render(this.world, this.camera, {
+      hoveredTileId: this.tileHover.hoveredTile?.id ?? null
+    });
   }
 
   start() {
@@ -144,11 +266,13 @@ export class Engine {
     window.removeEventListener("resize", this.resize);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
+    this.canvas.removeEventListener("pointerleave", this.onPointerLeave);
     this.canvas.removeEventListener("pointerup", this.onPointerEnd);
     this.canvas.removeEventListener("pointercancel", this.onPointerEnd);
     this.canvas.removeEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.canvas.classList?.remove("is-dragging");
     this.dragPointerId = null;
+    this.clearHover();
   }
 }

@@ -14,7 +14,9 @@ export const CONFIG = {
   colors: {
     background: "#141414",
     ground: "#383838",
-    grid: "#4c4c4c"
+    grid: "#4c4c4c",
+    hover: "#8f7438",
+    hoverOutline: "#f0d58a"
   },
 
   camera: {

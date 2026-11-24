@@ -13,7 +13,7 @@ export class Renderer {
     this.height = height;
   }
 
-  render(world, camera) {
+  render(world, camera, { hoveredTileId = null } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
     const zoom = camera.zoom;
@@ -32,7 +32,9 @@ export class Renderer {
     ctx.translate(offsetX, offsetY);
     ctx.scale(zoom, zoom);
 
-    for (const { x, y, elevation = 0 } of world.getTiles()) {
+    for (const tile of world.getTiles()) {
+      const { x, y, elevation = 0 } = tile;
+      const isHovered = tile.id === hoveredTileId;
       const p = gridToScreen(x, y, tileW, tileH);
       const elevatedY = p.y - elevation * elevationStep;
 
@@ -43,12 +45,16 @@ export class Renderer {
       ctx.lineTo(p.x - tileW / 2, elevatedY + tileH / 2);
       ctx.closePath();
 
-      ctx.fillStyle = config.colors.ground;
+      ctx.fillStyle = isHovered
+        ? (config.colors.hover ?? "#8f7438")
+        : config.colors.ground;
       ctx.fill();
 
-      ctx.strokeStyle = config.colors.grid;
-      // The context is scaled by camera.zoom, so compensate to keep a 1 CSS px line.
-      ctx.lineWidth = 1 / zoom;
+      ctx.strokeStyle = isHovered
+        ? (config.colors.hoverOutline ?? "#f0d58a")
+        : config.colors.grid;
+      // Normal grid edges stay at 1 CSS px; hover gets a clearer 2 CSS px outline.
+      ctx.lineWidth = (isHovered ? 2 : 1) / zoom;
       ctx.stroke();
     }
 
