@@ -20,6 +20,9 @@ export const CONFIG = {
   camera: {
     x: 0,
     y: 0,
-    zoom: 1
+    zoom: 1,
+    minZoom: 0.35,
+    maxZoom: 3,
+    wheelZoomSpeed: 0.001
   }
 };

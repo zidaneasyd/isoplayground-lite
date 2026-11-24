@@ -16,20 +16,21 @@ export class Renderer {
   render(world, camera) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
+    const zoom = camera.zoom;
 
     ctx.clearRect(0, 0, this.width, this.height);
     ctx.fillStyle = config.colors.background;
     ctx.fillRect(0, 0, this.width, this.height);
 
-    // Pusatkan keseluruhan diamond dunia pada viewport.
+    // These are the center of the full diamond bounds, including tile corners.
     const worldCenterX = (world.width - world.height) * tileW / 4;
     const worldCenterY = (world.width + world.height) * tileH / 4;
-    const offsetX = this.width / 2 - worldCenterX + camera.x;
-    const offsetY = this.height / 2 - worldCenterY + camera.y;
+    const offsetX = this.width / 2 - worldCenterX * zoom + camera.x;
+    const offsetY = this.height / 2 - worldCenterY * zoom + camera.y;
 
     ctx.save();
     ctx.translate(offsetX, offsetY);
-    ctx.scale(camera.zoom, camera.zoom);
+    ctx.scale(zoom, zoom);
 
     for (const { x, y, elevation = 0 } of world.getTiles()) {
       const p = gridToScreen(x, y, tileW, tileH);

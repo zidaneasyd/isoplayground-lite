@@ -4,6 +4,7 @@ export class GameLoop {
     this.render = render;
     this.running = false;
     this.lastTime = 0;
+    this.rafId = null;
     this.frame = this.frame.bind(this);
   }
 
@@ -11,19 +12,35 @@ export class GameLoop {
     if (this.running) return;
     this.running = true;
     this.lastTime = performance.now();
-    requestAnimationFrame(this.frame);
+    this.rafId = requestAnimationFrame(this.frame);
   }
 
   stop() {
     this.running = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
   }
 
   frame(now) {
+    this.rafId = null;
     if (!this.running) return;
-    const deltaTime = Math.min((now - this.lastTime) / 1000, 0.05);
+
+    const deltaTime = Math.min(Math.max((now - this.lastTime) / 1000, 0), 0.05);
     this.lastTime = now;
-    this.update(deltaTime);
-    this.render();
-    requestAnimationFrame(this.frame);
+
+    try {
+      this.update(deltaTime);
+      if (!this.running) return;
+      this.render();
+    } catch (error) {
+      this.stop();
+      throw error;
+    }
+
+    if (this.running) {
+      this.rafId = requestAnimationFrame(this.frame);
+    }
   }
 }
