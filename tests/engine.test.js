@@ -37,7 +37,7 @@ function makeCanvas() {
   };
 }
 
-test("engine wires drag pan, cursor-centered wheel zoom, resize, and cleanup", () => {
+test("engine wires bounded drag pan, cursor-centered wheel zoom, resize, and cleanup", () => {
   const originalWindow = globalThis.window;
   const windowListeners = new Map();
   globalThis.window = {
