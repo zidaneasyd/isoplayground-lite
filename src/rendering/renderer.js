@@ -13,6 +13,16 @@ export class Renderer {
     this.height = height;
   }
 
+  #traceTileDiamond(p, elevatedY, tileW, tileH) {
+    const { ctx } = this;
+    ctx.beginPath();
+    ctx.moveTo(p.x, elevatedY);
+    ctx.lineTo(p.x + tileW / 2, elevatedY + tileH / 2);
+    ctx.lineTo(p.x, elevatedY + tileH);
+    ctx.lineTo(p.x - tileW / 2, elevatedY + tileH / 2);
+    ctx.closePath();
+  }
+
   render(world, camera, { hoveredTileId = null, selectedTileId = null } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
@@ -32,6 +42,9 @@ export class Renderer {
     ctx.translate(offsetX, offsetY);
     ctx.scale(zoom, zoom);
 
+    let hoveredOverlay = null;
+    let selectedOverlay = null;
+
     for (const tile of world.getTiles()) {
       const { x, y, elevation = 0 } = tile;
       const isHovered = tile.id === hoveredTileId;
@@ -39,27 +52,40 @@ export class Renderer {
       const p = gridToScreen(x, y, tileW, tileH);
       const elevatedY = p.y - elevation * elevationStep;
 
-      ctx.beginPath();
-      ctx.moveTo(p.x, elevatedY);
-      ctx.lineTo(p.x + tileW / 2, elevatedY + tileH / 2);
-      ctx.lineTo(p.x, elevatedY + tileH);
-      ctx.lineTo(p.x - tileW / 2, elevatedY + tileH / 2);
-      ctx.closePath();
+      this.#traceTileDiamond(p, elevatedY, tileW, tileH);
 
       ctx.fillStyle = isSelected
         ? (config.colors.selected ?? "#6f5a9e")
         : isHovered
-          ? (config.colors.hover ?? "#8f7438")
-          : config.colors.ground;
+        ? (config.colors.hover ?? "#8f7438")
+        : config.colors.ground;
       ctx.fill();
 
-      ctx.strokeStyle = isSelected
-        ? (config.colors.selectedOutline ?? "#d7c4ff")
-        : isHovered
-          ? (config.colors.hoverOutline ?? "#f0d58a")
-          : config.colors.grid;
-      // Normal edges stay at 1 CSS px; hover and selection use clearer outlines.
-      ctx.lineWidth = (isHovered || isSelected ? 2 : 1) / zoom;
+      // Base grid outline for all tiles.
+      ctx.strokeStyle = config.colors.grid;
+      ctx.lineWidth = 1 / zoom;
+      ctx.stroke();
+
+      if (isHovered && !isSelected) {
+        hoveredOverlay = { p, elevatedY };
+      }
+      if (isSelected) {
+        selectedOverlay = { p, elevatedY };
+      }
+    }
+
+    // Draw full 4-edge active outlines on top so neighboring tiles never overlap them.
+    if (hoveredOverlay) {
+      this.#traceTileDiamond(hoveredOverlay.p, hoveredOverlay.elevatedY, tileW, tileH);
+      ctx.strokeStyle = config.colors.hoverOutline ?? "#f0d58a";
+      ctx.lineWidth = 1 / zoom;
+      ctx.stroke();
+    }
+
+    if (selectedOverlay) {
+      this.#traceTileDiamond(selectedOverlay.p, selectedOverlay.elevatedY, tileW, tileH);
+      ctx.strokeStyle = config.colors.selectedOutline ?? "#d7c4ff";
+      ctx.lineWidth = 1 / zoom;
       ctx.stroke();
     }
 
