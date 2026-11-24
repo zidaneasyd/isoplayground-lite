@@ -1,7 +1,7 @@
 export const CONFIG = {
   world: {
-    width: 20,
-    height: 20,
+    width: 12,
+    height: 12,
     baseElevation: 0
   },
 
