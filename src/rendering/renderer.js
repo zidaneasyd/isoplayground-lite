@@ -15,7 +15,7 @@ export class Renderer {
 
   render(world, camera) {
     const { ctx, config } = this;
-    const { width: tileW, height: tileH } = config.tile;
+    const { width: tileW, height: tileH, elevationStep } = config.tile;
 
     ctx.clearRect(0, 0, this.width, this.height);
     ctx.fillStyle = config.colors.background;
@@ -31,14 +31,15 @@ export class Renderer {
     ctx.translate(offsetX, offsetY);
     ctx.scale(camera.zoom, camera.zoom);
 
-    for (const { x, y } of world.getTiles()) {
+    for (const { x, y, elevation = 0 } of world.getTiles()) {
       const p = gridToScreen(x, y, tileW, tileH);
+      const elevatedY = p.y - elevation * elevationStep;
 
       ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x + tileW / 2, p.y + tileH / 2);
-      ctx.lineTo(p.x, p.y + tileH);
-      ctx.lineTo(p.x - tileW / 2, p.y + tileH / 2);
+      ctx.moveTo(p.x, elevatedY);
+      ctx.lineTo(p.x + tileW / 2, elevatedY + tileH / 2);
+      ctx.lineTo(p.x, elevatedY + tileH);
+      ctx.lineTo(p.x - tileW / 2, elevatedY + tileH / 2);
       ctx.closePath();
 
       ctx.fillStyle = config.colors.ground;

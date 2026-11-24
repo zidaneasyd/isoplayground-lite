@@ -1,12 +1,14 @@
 export const CONFIG = {
   world: {
     width: 20,
-    height: 20
+    height: 20,
+    baseElevation: 0
   },
 
   tile: {
     width: 64,
-    height: 32
+    height: 32,
+    elevationStep: 16
   },
 
   colors: {
