@@ -7,106 +7,429 @@ import { CONFIG } from "../src/core/config.js";
 
 function makeContext() {
   const calls = [];
-  const lineWidths = [];
-  const fillStyles = [];
-  const strokeStyles = [];
+  const fillRecords = [];
+  const strokeRecords = [];
+
+  let currentPath = [];
+  let currentFillStyle = null;
+  let currentStrokeStyle = null;
   let currentLineWidth = 1;
+
   const ctx = {};
+
   for (const method of [
-    "clearRect", "fillRect", "save", "translate", "scale", "beginPath",
-    "moveTo", "lineTo", "closePath", "fill", "stroke", "restore"
+    "clearRect",
+    "fillRect",
+    "save",
+    "translate",
+    "scale",
+    "restore"
   ]) {
-    ctx[method] = (...args) => calls.push([method, ...args]);
+    ctx[method] = (...args) => {
+      calls.push([method, ...args]);
+    };
   }
+
+  ctx.beginPath = () => {
+    currentPath = [];
+    calls.push(["beginPath"]);
+  };
+
+  ctx.moveTo = (...args) => {
+    currentPath.push(["M", ...args]);
+    calls.push(["moveTo", ...args]);
+  };
+
+  ctx.lineTo = (...args) => {
+    currentPath.push(["L", ...args]);
+    calls.push(["lineTo", ...args]);
+  };
+
+  ctx.closePath = () => {
+    currentPath.push(["Z"]);
+    calls.push(["closePath"]);
+  };
+
+  ctx.fill = () => {
+    fillRecords.push({
+      style: currentFillStyle,
+      path: currentPath.map((item) => [...item])
+    });
+    calls.push(["fill"]);
+  };
+
+  ctx.stroke = () => {
+    strokeRecords.push({
+      style: currentStrokeStyle,
+      width: currentLineWidth,
+      path: currentPath.map((item) => [...item])
+    });
+    calls.push(["stroke"]);
+  };
+
   Object.defineProperty(ctx, "fillStyle", {
-    set: (value) => { fillStyles.push(value); }
+    set: (value) => {
+      currentFillStyle = value;
+    }
   });
+
   Object.defineProperty(ctx, "strokeStyle", {
-    set: (value) => { strokeStyles.push(value); }
+    set: (value) => {
+      currentStrokeStyle = value;
+    }
   });
+
   Object.defineProperty(ctx, "lineWidth", {
     get: () => currentLineWidth,
-    set: (value) => { currentLineWidth = value; lineWidths.push(value); }
+    set: (value) => {
+      currentLineWidth = value;
+    }
   });
-  return { ctx, calls, lineWidths, fillStyles, strokeStyles };
+
+  return {
+    ctx,
+    calls,
+    fillRecords,
+    strokeRecords
+  };
+}
+
+/**
+ * Validates that a recorded path contains a complete four-sided diamond.
+ */
+function assertDiamondPath(record) {
+  const path = record.path;
+
+  assert.deepEqual(
+    path.map(([command]) => command),
+    ["M", "L", "L", "L", "Z"]
+  );
+
+  const [, mx, my] = path[0];
+  const [, rx, ry] = path[1];
+  const [, bx, by] = path[2];
+  const [, lx, ly] = path[3];
+
+  assert.equal(rx - mx, CONFIG.tile.width / 2);
+  assert.equal(ry - my, CONFIG.tile.height / 2);
+
+  assert.equal(bx - mx, 0);
+  assert.equal(by - my, CONFIG.tile.height);
+
+  assert.equal(lx - mx, -CONFIG.tile.width / 2);
+  assert.equal(ly - my, CONFIG.tile.height / 2);
 }
 
 test("renderer centers the world correctly at non-unit zoom", () => {
-  const { ctx, calls } = makeContext();
+  const { ctx, calls, strokeRecords } = makeContext();
+
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(200, 100);
+
   const world = new World({ width: 2, height: 2 });
-  const camera = new Camera({ x: 10, y: -5, zoom: 2, minZoom: 0.5, maxZoom: 3 });
+  const camera = new Camera({
+    x: 10,
+    y: -5,
+    zoom: 2,
+    minZoom: 0.5,
+    maxZoom: 3
+  });
 
   renderer.render(world, camera);
 
-  assert.ok(calls.some(([name, x, y]) => name === "translate" && x === 110 && y === -19));
-  assert.ok(calls.some(([name, x, y]) => name === "scale" && x === 2 && y === 2));
-  assert.equal(calls.filter(([name]) => name === "beginPath").length, 4);
-  assert.equal(calls.filter(([name]) => name === "fill").length, 4);
-  assert.equal(calls.filter(([name]) => name === "stroke").length, 4);
+  assert.ok(
+    calls.some(
+      ([name, x, y]) =>
+        name === "translate" && x === 110 && y === -19
+    )
+  );
+
+  assert.ok(
+    calls.some(
+      ([name, x, y]) =>
+        name === "scale" && x === 2 && y === 2
+    )
+  );
+
+  assert.equal(
+    calls.filter(([name]) => name === "beginPath").length,
+    4
+  );
+
+  assert.equal(
+    calls.filter(([name]) => name === "fill").length,
+    4
+  );
+
+  assert.equal(strokeRecords.length, 4);
 });
 
-test("grid line width compensates for zoom and stays at one CSS pixel", () => {
-  const { ctx, lineWidths } = makeContext();
+test("base grid outlines remain one CSS pixel at every zoom level", () => {
+  const { ctx, strokeRecords } = makeContext();
+
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(640, 480);
+
   const world = new World({ width: 2, height: 2 });
-  const camera = new Camera({ zoom: 2, minZoom: 0.5, maxZoom: 3 });
 
-  renderer.render(world, camera);
-  assert.ok(lineWidths.every((width) => width === 0.5));
+  for (const zoom of [2, 0.5]) {
+    strokeRecords.length = 0;
 
-  lineWidths.length = 0;
-  camera.zoom = 0.5;
-  renderer.render(world, camera);
-  assert.ok(lineWidths.every((width) => width === 2));
+    renderer.render(
+      world,
+      new Camera({
+        zoom,
+        minZoom: 0.5,
+        maxZoom: 3
+      })
+    );
+
+    assert.equal(strokeRecords.length, 4);
+
+    assert.ok(
+      strokeRecords.every(
+        (record) =>
+          record.style === CONFIG.colors.grid &&
+          record.width === 1 / zoom
+      )
+    );
+  }
 });
-
 
 test("renderer reads mutable per-tile elevation from persistent world data", () => {
   const { ctx, calls } = makeContext();
+
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(640, 480);
+
   const world = new World({ width: 2, height: 2 });
+
   const tile = world.getTile(0, 0);
   tile.elevation = 2;
 
   renderer.render(world, new Camera({ zoom: 1 }));
 
-  // The first tile is (0, 0); its top vertex is raised by 2 * 16 world pixels.
-  assert.deepEqual(calls.find(([name]) => name === "moveTo"), ["moveTo", 0, -32]);
-  assert.equal(world.getTileById(tile.id).elevation, 2);
+  assert.deepEqual(
+    calls.find(([name]) => name === "moveTo"),
+    ["moveTo", 0, -32]
+  );
+
+  assert.equal(
+    world.getTileById(tile.id).elevation,
+    2
+  );
 });
 
+test("renderer highlights only the hovered tile with a complete four-edge outline", () => {
+  const {
+    ctx,
+    fillRecords,
+    strokeRecords
+  } = makeContext();
 
-test("renderer highlights only the hovered tile with a distinct fill and outline", () => {
-  const { ctx, lineWidths, fillStyles, strokeStyles } = makeContext();
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(640, 480);
+
   const world = new World({ width: 2, height: 2 });
-  const camera = new Camera({ zoom: 2, minZoom: 0.5, maxZoom: 3 });
+  const camera = new Camera({
+    zoom: 2,
+    minZoom: 0.5,
+    maxZoom: 3
+  });
 
-  renderer.render(world, camera, { hoveredTileId: "tile-1-0" });
+  renderer.render(world, camera, {
+    hoveredTileId: "tile-1-0"
+  });
 
-  assert.equal(fillStyles.filter((style) => style === CONFIG.colors.hover).length, 1);
-  assert.equal(strokeStyles.filter((style) => style === CONFIG.colors.hoverOutline).length, 1);
-  assert.deepEqual(lineWidths, [0.5, 0.5, 1, 0.5]);
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.hover
+    ).length,
+    1
+  );
+
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.ground
+    ).length,
+    3
+  );
+
+  assert.equal(
+    strokeRecords.filter(
+      (record) => record.style === CONFIG.colors.grid
+    ).length,
+    4
+  );
+
+  const activeOutline = strokeRecords.at(-1);
+
+  assert.equal(
+    activeOutline.style,
+    CONFIG.colors.hoverOutline
+  );
+
+  assert.equal(
+    activeOutline.width,
+    2 / camera.zoom
+  );
+
+  assertDiamondPath(activeOutline);
+});
+
+test("hover and selected outlines preserve two CSS pixel thickness at different zoom levels", () => {
+  const { ctx, strokeRecords } = makeContext();
+
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+
+  const world = new World({ width: 2, height: 2 });
+
+  for (const zoom of [2, 0.5]) {
+    strokeRecords.length = 0;
+
+    renderer.render(
+      world,
+      new Camera({
+        zoom,
+        minZoom: 0.5,
+        maxZoom: 3
+      }),
+      {
+        hoveredTileId: "tile-1-0"
+      }
+    );
+
+    const gridOutlines = strokeRecords.filter(
+      (record) => record.style === CONFIG.colors.grid
+    );
+
+    const hoverOutline = strokeRecords.filter(
+      (record) => record.style === CONFIG.colors.hoverOutline
+    );
+
+    assert.equal(gridOutlines.length, 4);
+    assert.equal(hoverOutline.length, 1);
+
+    assert.ok(
+      gridOutlines.every(
+        (record) => record.width === 1 / zoom
+      )
+    );
+
+    assert.equal(
+      hoverOutline[0].width,
+      2 / zoom
+    );
+
+    assertDiamondPath(hoverOutline[0]);
+  }
 });
 
 test("renderer gives selected tile visual priority over hover", () => {
-  const { ctx, lineWidths, fillStyles, strokeStyles } = makeContext();
+  const {
+    ctx,
+    fillRecords,
+    strokeRecords
+  } = makeContext();
+
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(640, 480);
+
   const world = new World({ width: 2, height: 2 });
   const selected = world.getTile(0, 1);
 
-  renderer.render(world, new Camera({ zoom: 2 }), {
+  const camera = new Camera({ zoom: 2 });
+
+  renderer.render(world, camera, {
     hoveredTileId: selected.id,
     selectedTileId: selected.id
   });
 
-  assert.equal(fillStyles.filter((style) => style === CONFIG.colors.selected).length, 1);
-  assert.equal(strokeStyles.filter((style) => style === CONFIG.colors.selectedOutline).length, 1);
-  assert.deepEqual(lineWidths, [0.5, 1, 0.5, 0.5]);
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.selected
+    ).length,
+    1
+  );
+
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.hover
+    ).length,
+    0
+  );
+
+  assert.equal(
+    strokeRecords.filter(
+      (record) => record.style === CONFIG.colors.hoverOutline
+    ).length,
+    0
+  );
+
+  const selectedOutline = strokeRecords.at(-1);
+
+  assert.equal(
+    selectedOutline.style,
+    CONFIG.colors.selectedOutline
+  );
+
+  assert.equal(
+    selectedOutline.width,
+    2 / camera.zoom
+  );
+
+  assertDiamondPath(selectedOutline);
+});
+
+test("selected outline is rendered after hover outline when different tiles are active", () => {
+  const {
+    ctx,
+    fillRecords,
+    strokeRecords
+  } = makeContext();
+
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+
+  const world = new World({ width: 2, height: 2 });
+
+  const hovered = world.getTile(1, 0);
+  const selected = world.getTile(0, 1);
+
+  const camera = new Camera({ zoom: 2 });
+
+  renderer.render(world, camera, {
+    hoveredTileId: hovered.id,
+    selectedTileId: selected.id
+  });
+
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.hover
+    ).length,
+    1
+  );
+
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.selected
+    ).length,
+    1
+  );
+
+  const activeOutlines = strokeRecords.slice(-2);
+
+  assert.deepEqual(
+    activeOutlines.map((record) => record.style),
+    [
+      CONFIG.colors.hoverOutline,
+      CONFIG.colors.selectedOutline
+    ]
+  );
+
+  for (const outline of activeOutlines) {
+    assert.equal(outline.width, 2 / camera.zoom);
+    assertDiamondPath(outline);
+  }
 });
