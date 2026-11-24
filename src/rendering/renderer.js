@@ -32,8 +32,7 @@ export class Renderer {
     ctx.translate(offsetX, offsetY);
     ctx.scale(zoom, zoom);
 
-    for (const tile of world.getTiles()) {
-      const { x, y, elevation = 0 } = tile;
+    for (const { x, y, elevation = 0 } of world.getTiles()) {
       const p = gridToScreen(x, y, tileW, tileH);
       const elevatedY = p.y - elevation * elevationStep;
 
@@ -44,8 +43,7 @@ export class Renderer {
       ctx.lineTo(p.x - tileW / 2, elevatedY + tileH / 2);
       ctx.closePath();
 
-      ctx.fillStyle = config.colors.terrain?.[tile.terrain] ??
-        config.colors[tile.terrain] ?? config.colors.ground;
+      ctx.fillStyle = config.colors.ground;
       ctx.fill();
 
       ctx.strokeStyle = config.colors.grid;
