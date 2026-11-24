@@ -404,3 +404,92 @@ test("engine clears the active hover on pointer cancellation", () => {
     else globalThis.window = originalWindow;
   }
 });
+
+test("engine selects tiles on click, preserves selection on pan, and deselects on empty click", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners, calls } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const first = engine.world.getTile(5, 5);
+    const firstPoint = getTileClientCenter(engine, canvas, first);
+
+    assert.equal(engine.getSelectedTile(), null);
+    listeners.get("pointerdown")({
+      button: 0, pointerId: 21,
+      clientX: firstPoint.clientX, clientY: firstPoint.clientY
+    });
+    listeners.get("pointerup")({
+      pointerId: 21, type: "pointerup",
+      clientX: firstPoint.clientX, clientY: firstPoint.clientY
+    });
+    assert.equal(engine.getSelectedTile(), first);
+
+    const second = engine.world.getTile(7, 4);
+    const secondPoint = getTileClientCenter(engine, canvas, second);
+    listeners.get("pointermove")({ pointerId: 22, ...secondPoint });
+    assert.equal(engine.getHoveredTile(), second);
+    assert.equal(engine.getSelectedTile(), first, "hovering another tile must not change selection");
+
+    const beforePanSelection = engine.getSelectedTile();
+    listeners.get("pointerdown")({
+      button: 0, pointerId: 23,
+      clientX: firstPoint.clientX, clientY: firstPoint.clientY
+    });
+    listeners.get("pointermove")({
+      pointerId: 23,
+      clientX: firstPoint.clientX + 30,
+      clientY: firstPoint.clientY + 20
+    });
+    listeners.get("pointerup")({
+      pointerId: 23, type: "pointerup",
+      clientX: firstPoint.clientX + 30,
+      clientY: firstPoint.clientY + 20
+    });
+    assert.equal(engine.getSelectedTile(), beforePanSelection, "dragging the camera must not select a tile");
+
+    // Click inside the canvas but outside the world to clear the current selection.
+    listeners.get("pointerdown")({ button: 0, pointerId: 24, clientX: 51, clientY: 101 });
+    listeners.get("pointerup")({ pointerId: 24, type: "pointerup", clientX: 51, clientY: 101 });
+    assert.equal(engine.getSelectedTile(), null);
+    assert.ok(calls.filter(([name]) => name === "clearRect").length > 0);
+
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine does not select on pointer cancellation and clears selection on destroy", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const tile = engine.world.getTile(5, 5);
+    const point = getTileClientCenter(engine, canvas, tile);
+    listeners.get("pointerdown")({ button: 0, pointerId: 25, ...point });
+    listeners.get("pointercancel")({ pointerId: 25, type: "pointercancel" });
+    assert.equal(engine.getSelectedTile(), null);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 26, ...point });
+    listeners.get("pointerup")({ pointerId: 26, type: "pointerup", ...point });
+    assert.equal(engine.getSelectedTile(), tile);
+    engine.destroy();
+    assert.equal(engine.getSelectedTile(), null);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});

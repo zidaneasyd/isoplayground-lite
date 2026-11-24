@@ -16,7 +16,9 @@ export const CONFIG = {
     ground: "#383838",
     grid: "#4c4c4c",
     hover: "#8f7438",
-    hoverOutline: "#f0d58a"
+    hoverOutline: "#f0d58a",
+    selected: "#6f5a9e",
+    selectedOutline: "#d7c4ff"
   },
 
   camera: {

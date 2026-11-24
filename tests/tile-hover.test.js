@@ -4,6 +4,7 @@ import { Camera } from "../src/camera/camera.js";
 import { CONFIG } from "../src/core/config.js";
 import { gridToScreen, getWorldCenter } from "../src/world/coordinates.js";
 import { TileHover, findTileAtScreenPoint } from "../src/interaction/tile-hover.js";
+import { TileSelection } from "../src/interaction/tile-selection.js";
 import { World } from "../src/world/world.js";
 
 function makeView({
@@ -108,4 +109,21 @@ test("tile hover rejects invalid coordinates and invalid views safely", () => {
     ...view,
     world: { width: 0, height: 4, getTiles: () => [] }
   }), null);
+});
+
+test("TileSelection stores a persistent tile reference and supports replacement and clearing", () => {
+  const view = makeView({ width: 2, height: 2 });
+  const selection = new TileSelection();
+  const first = view.world.getTile(0, 0);
+  const second = view.world.getTile(1, 1);
+
+  assert.equal(selection.selectedTile, null);
+  assert.equal(selection.select(first), true);
+  assert.equal(selection.selectedTile, first);
+  assert.equal(selection.select(first), false);
+  assert.equal(selection.select(second), true);
+  assert.equal(selection.selectedTile, second);
+  assert.equal(selection.clear(), true);
+  assert.equal(selection.selectedTile, null);
+  assert.equal(selection.clear(), false);
 });

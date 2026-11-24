@@ -51,3 +51,8 @@ npm test
 ```
 
 Pengujian menggunakan test runner bawaan Node.js.
+
+
+### Tile Selection
+
+Klik kiri pada tile untuk memilihnya. Referensi tile terpilih dapat dibaca melalui `engine.getSelectedTile()`. Klik area kosong di dalam Canvas untuk menghapus pilihan. Drag kamera tidak mengubah pilihan; tile terpilih memiliki warna dan outline tersendiri yang diprioritaskan di atas hover.

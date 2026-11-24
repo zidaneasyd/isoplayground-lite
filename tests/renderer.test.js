@@ -93,3 +93,20 @@ test("renderer highlights only the hovered tile with a distinct fill and outline
   assert.equal(strokeStyles.filter((style) => style === CONFIG.colors.hoverOutline).length, 1);
   assert.deepEqual(lineWidths, [0.5, 0.5, 1, 0.5]);
 });
+
+test("renderer gives selected tile visual priority over hover", () => {
+  const { ctx, lineWidths, fillStyles, strokeStyles } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 2, height: 2 });
+  const selected = world.getTile(0, 1);
+
+  renderer.render(world, new Camera({ zoom: 2 }), {
+    hoveredTileId: selected.id,
+    selectedTileId: selected.id
+  });
+
+  assert.equal(fillStyles.filter((style) => style === CONFIG.colors.selected).length, 1);
+  assert.equal(strokeStyles.filter((style) => style === CONFIG.colors.selectedOutline).length, 1);
+  assert.deepEqual(lineWidths, [0.5, 1, 0.5, 0.5]);
+});

@@ -4,6 +4,7 @@ import { Camera } from "../camera/camera.js";
 import { Renderer } from "../rendering/renderer.js";
 import { screenToGrid, screenToTile } from "../world/coordinates.js";
 import { TileHover } from "../interaction/tile-hover.js";
+import { TileSelection } from "../interaction/tile-selection.js";
 
 export class Engine {
   constructor(canvas, config) {
@@ -20,6 +21,8 @@ export class Engine {
     this.camera = new Camera(config.camera);
     this.renderer = new Renderer(this.ctx, config);
     this.tileHover = new TileHover();
+    this.tileSelection = new TileSelection();
+    this.pointerDownPosition = null;
     this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
@@ -120,6 +123,11 @@ export class Engine {
     return this.tileHover.hoveredTile;
   }
 
+  /** Returns the persistent tile selected by the most recent click. */
+  getSelectedTile() {
+    return this.tileSelection.selectedTile;
+  }
+
   /** Updates hover using client coordinates and the current camera transform. */
   updateHoverAtClientPoint(clientX, clientY) {
     this.lastPointerClientPosition = { x: clientX, y: clientY };
@@ -178,6 +186,9 @@ export class Engine {
     this.dragPointerId = event.pointerId;
     this.lastPointerX = event.clientX;
     this.lastPointerY = event.clientY;
+    this.pointerDownPosition = Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+      ? { x: event.clientX, y: event.clientY }
+      : null;
     this.canvas.classList?.add("is-dragging");
     this.canvas.setPointerCapture?.(event.pointerId);
     if (this.updateHoverAtClientPoint(event.clientX, event.clientY)) this.render();
@@ -211,12 +222,27 @@ export class Engine {
     this.canvas.classList?.remove("is-dragging");
 
     let hoverChanged = false;
-    if (event.type === "pointercancel" || event.type === "lostpointercapture") {
+    let selectionChanged = false;
+    const cancelled = event.type === "pointercancel" || event.type === "lostpointercapture";
+    const hasReleasePoint = Number.isFinite(event.clientX) && Number.isFinite(event.clientY);
+
+    if (cancelled) {
       hoverChanged = this.clearHover();
-    } else if (Number.isFinite(event.clientX) && Number.isFinite(event.clientY)) {
+    } else if (hasReleasePoint) {
       hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+      if (this.pointerDownPosition) {
+        const scale = this.getCanvasClientScale();
+        const dx = (event.clientX - this.pointerDownPosition.x) * scale.x;
+        const dy = (event.clientY - this.pointerDownPosition.y) * scale.y;
+        const clickDistance = Math.hypot(dx, dy);
+        // A small tolerance accommodates pointer jitter without treating a pan as a click.
+        if (clickDistance <= 4) {
+          selectionChanged = this.tileSelection.select(this.tileHover.hoveredTile);
+        }
+      }
     }
-    if (hoverChanged) this.render();
+    this.pointerDownPosition = null;
+    if (hoverChanged || selectionChanged) this.render();
   }
 
   onWheel(event) {
@@ -246,7 +272,8 @@ export class Engine {
 
   render() {
     this.renderer.render(this.world, this.camera, {
-      hoveredTileId: this.tileHover.hoveredTile?.id ?? null
+      hoveredTileId: this.tileHover.hoveredTile?.id ?? null,
+      selectedTileId: this.tileSelection.selectedTile?.id ?? null
     });
   }
 
@@ -273,6 +300,8 @@ export class Engine {
     this.canvas.removeEventListener("wheel", this.onWheel);
     this.canvas.classList?.remove("is-dragging");
     this.dragPointerId = null;
+    this.pointerDownPosition = null;
     this.clearHover();
+    this.tileSelection.clear();
   }
 }
