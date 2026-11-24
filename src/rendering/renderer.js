@@ -23,6 +23,91 @@ export class Renderer {
     ctx.closePath();
   }
 
+  #fillSideFace(points, color) {
+  const { ctx } = this;
+
+  ctx.beginPath();
+  ctx.moveTo(points[0].x, points[0].y);
+
+  for (let i = 1; i < points.length; i++) {
+    ctx.lineTo(points[i].x, points[i].y);
+  }
+
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+#drawElevationSides(world, tile, p, elevatedY, tileW, tileH, elevationStep) {
+  if (!Number.isFinite(elevationStep) || elevationStep <= 0) return;
+
+  const baseElevation = Number.isFinite(world.baseElevation)
+    ? world.baseElevation
+    : 0;
+
+  // Sisi kanan: berbatasan dengan tile x + 1.
+  const rightNeighbor = world.getTile(tile.x + 1, tile.y);
+  const rightNeighborElevation = rightNeighbor
+    ? rightNeighbor.elevation
+    : baseElevation;
+
+  const rightDepth =
+    (tile.elevation - rightNeighborElevation) * elevationStep;
+
+  if (rightDepth > 0) {
+    const rightTop = {
+      x: p.x + tileW / 2,
+      y: elevatedY + tileH / 2
+    };
+
+    const bottomTop = {
+      x: p.x,
+      y: elevatedY + tileH
+    };
+
+    this.#fillSideFace(
+      [
+        rightTop,
+        bottomTop,
+        { x: bottomTop.x, y: bottomTop.y + rightDepth },
+        { x: rightTop.x, y: rightTop.y + rightDepth }
+      ],
+      this.config.colors.sideRight
+    );
+  }
+
+  // Sisi kiri: berbatasan dengan tile y + 1.
+  const leftNeighbor = world.getTile(tile.x, tile.y + 1);
+  const leftNeighborElevation = leftNeighbor
+    ? leftNeighbor.elevation
+    : baseElevation;
+
+  const leftDepth =
+    (tile.elevation - leftNeighborElevation) * elevationStep;
+
+  if (leftDepth > 0) {
+    const bottomTop = {
+      x: p.x,
+      y: elevatedY + tileH
+    };
+
+    const leftTop = {
+      x: p.x - tileW / 2,
+      y: elevatedY + tileH / 2
+    };
+
+    this.#fillSideFace(
+      [
+        bottomTop,
+        leftTop,
+        { x: leftTop.x, y: leftTop.y + leftDepth },
+        { x: bottomTop.x, y: bottomTop.y + leftDepth }
+      ],
+      this.config.colors.sideLeft
+    );
+  }
+}
+
   render(world, camera, { hoveredTileId = null, selectedTileId = null } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
@@ -50,9 +135,20 @@ export class Renderer {
       const isHovered = tile.id === hoveredTileId;
       const isSelected = tile.id === selectedTileId;
       const p = gridToScreen(x, y, tileW, tileH);
+      
       const elevatedY = p.y - elevation * elevationStep;
 
-      this.#traceTileDiamond(p, elevatedY, tileW, tileH);
+this.#drawElevationSides(
+  world,
+  tile,
+  p,
+  elevatedY,
+  tileW,
+  tileH,
+  elevationStep
+);
+
+this.#traceTileDiamond(p, elevatedY, tileW, tileH);
 
       ctx.fillStyle = isSelected
         ? (config.colors.selected ?? "#6f5a9e")

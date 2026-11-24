@@ -211,7 +211,7 @@ test("renderer reads mutable per-tile elevation from persistent world data", () 
 
   assert.deepEqual(
     calls.find(([name]) => name === "moveTo"),
-    ["moveTo", 0, -32]
+    ["moveTo", 0, -16]
   );
 
   assert.equal(
@@ -432,4 +432,63 @@ test("selected outline is rendered after hover outline when different tiles are 
     assert.equal(outline.width, 2 / camera.zoom);
     assertDiamondPath(outline);
   }
+});
+test("one elevation level uses eight pixels and renders both side faces", () => {
+  const { ctx, fillRecords } = makeContext();
+
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+
+  const world = new World({ width: 1, height: 1 });
+  world.getTile(0, 0).elevation = 1;
+
+  renderer.render(world, new Camera({ zoom: 1 }));
+
+  assert.equal(CONFIG.tile.elevationStep, 8);
+
+  const sideFaces = fillRecords.filter((record) =>
+    [
+      CONFIG.colors.sideRight,
+      CONFIG.colors.sideLeft
+    ].includes(record.style)
+  );
+
+  assert.equal(sideFaces.length, 2);
+
+  assert.deepEqual(sideFaces[0].path, [
+    ["M", 32, 8],
+    ["L", 0, 24],
+    ["L", 0, 32],
+    ["L", 32, 16],
+    ["Z"]
+  ]);
+
+  assert.deepEqual(sideFaces[1].path, [
+    ["M", 0, 24],
+    ["L", -32, 8],
+    ["L", -32, 16],
+    ["L", 0, 32],
+    ["Z"]
+  ]);
+});
+
+test("equal elevation neighbors do not create a shared vertical wall", () => {
+  const { ctx, fillRecords } = makeContext();
+
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+
+  const world = new World({ width: 2, height: 1 });
+
+  world.getTile(0, 0).elevation = 1;
+  world.getTile(1, 0).elevation = 1;
+
+  renderer.render(world, new Camera({ zoom: 1 }));
+
+  assert.equal(
+    fillRecords.filter(
+      (record) => record.style === CONFIG.colors.sideRight
+    ).length,
+    0
+  );
 });
