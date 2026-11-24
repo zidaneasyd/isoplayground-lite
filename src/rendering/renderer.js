@@ -78,14 +78,14 @@ export class Renderer {
     if (hoveredOverlay) {
       this.#traceTileDiamond(hoveredOverlay.p, hoveredOverlay.elevatedY, tileW, tileH);
       ctx.strokeStyle = config.colors.hoverOutline ?? "#f0d58a";
-      ctx.lineWidth = 1 / zoom;
+      ctx.lineWidth = 2 / zoom;
       ctx.stroke();
     }
 
     if (selectedOverlay) {
       this.#traceTileDiamond(selectedOverlay.p, selectedOverlay.elevatedY, tileW, tileH);
       ctx.strokeStyle = config.colors.selectedOutline ?? "#d7c4ff";
-      ctx.lineWidth = 1 / zoom;
+      ctx.lineWidth = 2 / zoom;
       ctx.stroke();
     }
 
