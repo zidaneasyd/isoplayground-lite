@@ -44,6 +44,15 @@ export class Engine {
     this.resize();
   }
 
+  getCameraBounds() {
+    return {
+      world: this.world,
+      tile: this.config.tile,
+      viewportWidth: this.renderer.width,
+      viewportHeight: this.renderer.height
+    };
+  }
+
   resize() {
     if (this.destroyed) return;
 
@@ -58,6 +67,7 @@ export class Engine {
 
     this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     this.renderer.setViewport(width, height);
+    this.camera.constrainToVisibleTile(this.getCameraBounds());
     this.render();
   }
 
@@ -80,7 +90,7 @@ export class Engine {
     this.lastPointerX = event.clientX;
     this.lastPointerY = event.clientY;
 
-    if (this.camera.panBy(deltaX, deltaY)) this.render();
+    if (this.camera.panBy(deltaX, deltaY, this.getCameraBounds())) this.render();
   }
 
   onPointerEnd(event) {
@@ -104,7 +114,10 @@ export class Engine {
       this.renderer.height
     );
 
-    if (changed) this.render();
+    if (changed) {
+      this.camera.constrainToVisibleTile(this.getCameraBounds());
+      this.render();
+    }
   }
 
   update(_deltaTime) {

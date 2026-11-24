@@ -15,8 +15,9 @@ Lalu buka alamat lokal yang diberikan server.
 
 ## Kontrol
 
-- **Pan:** klik/tahan lalu geser mouse, atau geser dengan sentuhan.
-- **Zoom:** gunakan scroll wheel. Titik dunia di bawah kursor dipertahankan saat zoom.
+- **Pan:** klik/tahan lalu geser mouse, atau geser dengan sentuhan. Pergerakan dibatasi agar setidaknya satu tile diamond tetap terlihat penuh.
+- **Zoom:** gunakan scroll wheel. Titik dunia di bawah kursor dipertahankan selama batas pan memungkinkan.
+- **Grid thickness:** garis grid tetap setebal 1 CSS pixel pada semua tingkat zoom.
 - **Batas zoom:** 0,35× sampai 3×.
 
 ## Fondasi saat ini
@@ -27,9 +28,10 @@ Lalu buka alamat lokal yang diberikan server.
 - Konversi koordinat grid ke isometrik.
 - Rendering tile dalam urutan diagonal.
 - Permukaan abu-abu dengan garis grid abu-abu gelap.
+- Ketebalan garis grid tidak ikut membesar atau mengecil saat zoom.
 - Elevation dasar seragam per dunia.
 - Game loop dengan delta time yang dibatasi dan pembatalan frame saat dihentikan.
-- Kamera dengan pan dan zoom berbasis kursor.
+- Kamera dengan pan terbatas dan zoom berbasis kursor.
 
 Terrain berbeda, elevation per tile, object placement, collision, serta penyimpanan dunia belum termasuk tahap ini.
 
