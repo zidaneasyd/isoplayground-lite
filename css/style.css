@@ -176,37 +176,39 @@ body {
 
 .elevation-control {
   display: flex;
-  align-items: center;
-  height: 34px;
-  border: 1px solid #414141;
-  border-radius: 6px;
-  overflow: hidden;
-  background: #202020;
+  align-items: stretch;
+  justify-content: space-between;
+  width: 84px;
+  height: 30px;
+  border: 0;
+  background: transparent;
+  overflow: visible;
 }
 
 .elevation-control__button {
   display: grid;
-  width: 34px;
-  height: 32px;
-  flex: 0 0 34px;
+  width: 24px;
+  height: 30px;
+  flex: 0 0 24px;
   place-items: center;
   padding: 0;
   border: 0;
-  color: #dedede;
-  background: #292929;
+  border-radius: 4px;
+  color: #b8b8b8;
+  background: transparent;
   font: inherit;
-  font-size: 18px;
+  font-size: 14px;
   cursor: pointer;
   transition: background 120ms ease, color 120ms ease;
 }
 
 .elevation-control__button:hover:not(:disabled) {
   color: #ffffff;
-  background: #3478f6;
+  background: #282828;
 }
 
 .elevation-control__button:active:not(:disabled) {
-  background: #245fc9;
+  background: #323232;
 }
 
 .elevation-control__button:disabled {
@@ -229,34 +231,78 @@ body {
   font-variant-numeric: tabular-nums;
 }
 
-.tile-inspector input[type="text"] {
-  width: 112px;
-  min-width: 0;
-  height: 32px;
-  padding: 0 9px;
-  border: 1px solid #414141;
-  border-radius: 6px;
-  outline: none;
-  color: #f0f0f0;
-  background: #202020;
-  font: inherit;
-  font-size: 12px;
-}
-
-.tile-inspector input[type="text"]:focus {
-  border-color: #3478f6;
-  box-shadow: 0 0 0 2px rgba(52, 120, 246, 0.14);
-}
-
 .tile-inspector input:disabled {
   opacity: 0.45;
   cursor: not-allowed;
 }
 
-.tile-inspector input[type="checkbox"] {
-  width: 16px;
+/* Walkable Toggle Switch */
+
+.walkable-switch {
+  position: relative;
+  display: block;
+  width: 30px;
   height: 16px;
-  accent-color: #3478f6;
+  flex: 0 0 30px;
+}
+
+.walkable-switch input {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+
+  width: 100%;
+  height: 100%;
+  margin: 0;
+
+  opacity: 0;
+  cursor: pointer;
+}
+
+.walkable-switch__track {
+  position: absolute;
+  inset: 0;
+
+  border-radius: 999px;
+  background: #3a3a3a;
+
+  transition: background 160ms ease;
+}
+
+.walkable-switch__track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+
+  width: 12px;
+  height: 12px;
+
+  border-radius: 50%;
+  background: #ffffff;
+
+  transition: transform 160ms ease;
+}
+
+.walkable-switch input:checked + .walkable-switch__track {
+  background: #3478f6;
+}
+
+.walkable-switch input:checked + .walkable-switch__track::after {
+  transform: translateX(14px);
+}
+
+.walkable-switch input:focus-visible + .walkable-switch__track {
+  outline: 2px solid #3478f6;
+  outline-offset: 3px;
+}
+
+.walkable-switch input:disabled {
+  cursor: not-allowed;
+}
+
+.walkable-switch input:disabled + .walkable-switch__track {
+  opacity: 0.4;
 }
 
 .tile-inspector__footnote {
@@ -553,4 +599,117 @@ body {
     max-height: 100vh;
     padding: 12px;
   }
+}
+
+/* Custom Terrain Dropdown */
+
+.terrain-select {
+  position: relative;
+  width: 84px;
+  flex: 0 0 84px;
+  min-width: 0;
+}
+
+.terrain-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 5px;
+
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #efefef;
+
+  font: inherit;
+  font-size: 11px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.terrain-select__trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.terrain-select__trigger:hover:not(:disabled),
+.terrain-select.open .terrain-select__trigger {
+  background: #282828;
+}
+
+.terrain-select__trigger:focus-visible,
+.terrain-select__option:focus-visible {
+  outline: 2px solid #3478f6;
+  outline-offset: 2px;
+}
+
+.terrain-select__trigger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.terrain-select__arrow {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  color: #b5b5b5;
+  transition: transform 150ms ease;
+}
+
+.terrain-select.open .terrain-select__arrow {
+  transform: rotate(180deg);
+}
+
+.terrain-select__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  width: 112px;
+  padding: 4px;
+
+  border: 1px solid #323232;
+  border-radius: 6px;
+  background: #222222;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+}
+
+.terrain-select__menu[hidden] {
+  display: none;
+}
+
+.terrain-select__option {
+  width: 100%;
+  padding: 6px 8px;
+
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #dcdcdc;
+
+  font: inherit;
+  font-size: 11.5px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.terrain-select__option:hover {
+  background: #2e2e2e;
+  color: #ffffff;
+}
+
+.terrain-select__option[aria-checked="true"] {
+  background: rgba(37, 116, 245, 0.16);
+  color: #6ea6ff;
+  font-weight: 500;
 }

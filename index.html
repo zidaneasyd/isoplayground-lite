@@ -132,31 +132,95 @@
         </div>
       </div>
 
-      <label class="tile-inspector__field">
-        <span>
-          <strong>Terrain</strong>
-          <small>Identitas permukaan tile</small>
-        </span>
-        <input
-          data-input="terrain"
-          type="text"
-          maxlength="64"
-          required
-          disabled
-        >
-      </label>
+<div class="tile-inspector__field">
+  <span>
+    <strong>Terrain</strong>
+    <small>Identitas permukaan tile</small>
+  </span>
 
-      <label class="tile-inspector__toggle">
-        <span>
-          <strong>Walkable</strong>
-          <small>Tile dapat dilalui</small>
-        </span>
-        <input
-          data-input="walkable"
-          type="checkbox"
-          disabled
-        >
-      </label>
+  <div class="terrain-select" data-terrain-select>
+    <button
+      class="terrain-select__trigger"
+      type="button"
+      data-terrain-trigger
+      aria-haspopup="menu"
+      aria-expanded="false"
+      disabled
+    >
+      <span data-terrain-value>default</span>
+
+      <svg
+        class="terrain-select__arrow"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+
+    <div
+      class="terrain-select__menu"
+      data-terrain-menu
+      role="menu"
+      aria-label="Terrain options"
+      hidden
+    >
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="true"
+        data-terrain-option="default"
+      >default</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="grass"
+      >grass</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="water"
+      >water</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="stone"
+      >stone</button>
+    </div>
+  </div>
+</div>
+
+<label class="tile-inspector__toggle">
+  <span>
+    <strong>Walkable</strong>
+    <small>Tile dapat dilalui</small>
+  </span>
+
+  <span class="walkable-switch">
+    <input
+      data-input="walkable"
+      type="checkbox"
+      role="switch"
+      disabled
+    >
+    <span class="walkable-switch__track"></span>
+  </span>
+</label>
     </div>
   </section>
 </section>
