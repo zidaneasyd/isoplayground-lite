@@ -9,6 +9,26 @@
 <body>
   <canvas id="world" aria-label="Dunia isometrik"></canvas>
 
+  <section class="object-tools" aria-label="Object tools">
+    <div class="object-tools__actions">
+      <button type="button" data-open-object-form>Create Object</button>
+      <label class="object-tools__import">Import Sprite<input data-sprite-file type="file" accept="image/*"></label>
+    </div>
+    <div class="object-tools__import-size"><label>Display W<input data-sprite-width type="number" min="0.01" step="any" placeholder="natural"></label><label>Display H<input data-sprite-height type="number" min="0.01" step="any" placeholder="natural"></label></div>
+    <form class="object-tools__form" data-object-form hidden>
+      <label>Name<input name="name" required maxlength="80" value="New Object"></label>
+      <label>Type<input name="type" required maxlength="40" value="object"></label>
+      <label>Sprite<select name="assetId"><option value="">None</option></select></label>
+      <div class="object-tools__grid">
+        <label>Footprint W<input name="width" type="number" min="1" step="1" value="1" required></label>
+        <label>Footprint H<input name="height" type="number" min="1" step="1" value="1" required></label>
+      </div>
+      <label>Elevation offset<input name="elevationOffset" type="number" step="any" value="0" required></label>
+      <p data-tool-status role="status" aria-live="polite"></p>
+      <div class="object-tools__actions"><button type="submit">Place Object</button><button type="button" data-cancel-object>Cancel</button></div>
+    </form>
+  </section>
+
   <aside id="tile-inspector" class="tile-inspector" aria-labelledby="tile-inspector-title">
     <header class="tile-inspector__header">
       <div>
