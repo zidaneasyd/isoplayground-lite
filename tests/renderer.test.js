@@ -197,7 +197,7 @@ test("base grid outlines remain one CSS pixel at every zoom level", () => {
 });
 
 test("renderer reads mutable per-tile elevation from persistent world data", () => {
-  const { ctx, calls } = makeContext();
+  const { ctx, fillRecords } = makeContext();
 
   const renderer = new Renderer(ctx, CONFIG);
   renderer.setViewport(640, 480);
@@ -209,9 +209,14 @@ test("renderer reads mutable per-tile elevation from persistent world data", () 
 
   renderer.render(world, new Camera({ zoom: 1 }));
 
+  const groundTop = fillRecords.find(
+    (record) => record.style === CONFIG.colors.ground
+  );
+
+  assert.ok(groundTop, "the elevated tile top should be rendered");
   assert.deepEqual(
-    calls.find(([name]) => name === "moveTo"),
-    ["moveTo", 0, -16]
+    groundTop.path[0],
+    ["M", 0, -16]
   );
 
   assert.equal(
@@ -485,10 +490,19 @@ test("equal elevation neighbors do not create a shared vertical wall", () => {
 
   renderer.render(world, new Camera({ zoom: 1 }));
 
-  assert.equal(
-    fillRecords.filter(
-      (record) => record.style === CONFIG.colors.sideRight
-    ).length,
-    0
+  const rightFaces = fillRecords.filter(
+    (record) => record.style === CONFIG.colors.sideRight
   );
+
+  // Tile pertama tidak membuat dinding pada batas bersama.
+  // Tile kedua tetap memiliki sisi luar dunia.
+  assert.equal(rightFaces.length, 1);
+
+  assert.deepEqual(rightFaces[0].path, [
+    ["M", 64, 24],
+    ["L", 32, 40],
+    ["L", 32, 48],
+    ["L", 64, 32],
+    ["Z"]
+  ]);
 });
