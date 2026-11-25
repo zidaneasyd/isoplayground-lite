@@ -625,6 +625,74 @@ test("engine supports additive and subtractive pointer selection, middle pan, an
   }
 });
 
+test("elevation shortcuts ignore interactive targets and preserve normal edits elsewhere", () => {
+  const originalWindow = globalThis.window;
+  const windowListeners = new Map();
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: (name, fn) => windowListeners.set(name, fn),
+    removeEventListener: (name) => windowListeners.delete(name)
+  };
+  try {
+    const { canvas, calls } = makeCanvas();
+    const syncs = [];
+    const engine = new Engine(canvas, CONFIG, {
+      onElevationChange: (focus, tiles) => syncs.push({ focus, tiles })
+    });
+    const first = engine.world.getTile(4, 4);
+    const second = engine.world.getTile(5, 5);
+    first.elevation = 2;
+    second.elevation = -1;
+    engine.tileSelection.select(first);
+    engine.tileSelection.add(second);
+
+    const renderCount = () => calls.filter(([name]) => name === "clearRect").length;
+    const controls = [
+      { tagName: "INPUT" },
+      { tagName: "TEXTAREA" },
+      { tagName: "SELECT" },
+      { tagName: "BUTTON" },
+      { isContentEditable: true },
+      { getAttribute: (name) => name === "contenteditable" ? "true" : null },
+      { getAttribute: (name) => name === "role" ? "textbox" : null },
+      { getAttribute: (name) => name === "role" ? "combobox" : null },
+      { getAttribute: (name) => name === "role" ? "switch" : null }
+    ];
+
+    for (const target of controls) {
+      for (const key of ["ArrowUp", "ArrowDown"]) {
+        let prevented = false;
+        const before = [first.elevation, second.elevation];
+        const rendersBefore = renderCount();
+        const syncsBefore = syncs.length;
+        windowListeners.get("keydown")({ key, target, preventDefault: () => { prevented = true; } });
+        assert.deepEqual([first.elevation, second.elevation], before, `${key} on ${target.tagName ?? target.getAttribute?.("role") ?? "contenteditable"}`);
+        assert.equal(prevented, false);
+        assert.equal(renderCount(), rendersBefore);
+        assert.equal(syncs.length, syncsBefore);
+      }
+    }
+
+    let prevented = false;
+    const rendersBefore = renderCount();
+    windowListeners.get("keydown")({ key: "ArrowUp", preventDefault: () => { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.deepEqual([first.elevation, second.elevation], [3, 0]);
+    assert.deepEqual(engine.getSelectedTiles(), [first, second]);
+    assert.equal(renderCount(), rendersBefore + 1);
+    assert.deepEqual(syncs.at(-1), { focus: second, tiles: [first, second] });
+
+    windowListeners.get("keydown")({ key: "ArrowDown", target: null, preventDefault() {} });
+    assert.deepEqual([first.elevation, second.elevation], [2, -1]);
+    assert.deepEqual(engine.getSelectedTiles(), [first, second]);
+    assert.deepEqual(syncs.at(-1), { focus: second, tiles: [first, second] });
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
 test("engine replaces selection normally and processes each tile crossed by additive and subtractive drags", () => {
   const originalWindow = globalThis.window;
   globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };

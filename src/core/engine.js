@@ -7,6 +7,46 @@ import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
 import { updateTilesProperty } from "../world/tile-properties.js";
 
+const INTERACTIVE_ROLES = new Set([
+  "button", "checkbox", "combobox", "listbox", "menu", "menuitem",
+  "menuitemcheckbox", "menuitemradio", "option", "radio", "radiogroup",
+  "searchbox", "slider", "spinbutton", "switch", "tab", "textbox",
+  "tree", "treeitem"
+]);
+const INTERACTIVE_TARGET_SELECTOR = [
+  "input", "textarea", "select", "button", "a[href]", "summary",
+  "[contenteditable]:not([contenteditable=\"false\"])" ,
+  ...[...INTERACTIVE_ROLES].map((role) => `[role=\"${role}\"]`)
+].join(", ");
+
+function isInteractiveKeyTarget(target) {
+  if (!target || typeof target !== "object") return false;
+
+  if (typeof target.closest === "function") {
+    try {
+      if (target.closest(INTERACTIVE_TARGET_SELECTOR)) return true;
+    } catch {
+      // Non-DOM target stubs may expose an incompatible closest method.
+    }
+  }
+
+  const tagName = typeof target.tagName === "string"
+    ? target.tagName.toLowerCase()
+    : typeof target.localName === "string"
+      ? target.localName.toLowerCase()
+      : "";
+  if (["input", "textarea", "select", "button"].includes(tagName)) return true;
+  if (target.isContentEditable === true) return true;
+
+  const getAttribute = typeof target.getAttribute === "function"
+    ? target.getAttribute.bind(target)
+    : null;
+  if (getAttribute && getAttribute("contenteditable") !== null &&
+      String(getAttribute("contenteditable")).toLowerCase() !== "false") return true;
+  const role = getAttribute?.("role");
+  return typeof role === "string" && INTERACTIVE_ROLES.has(role.toLowerCase());
+}
+
 export class Engine {
   constructor(canvas, config, { onSelectionChange = null, onElevationChange = null } = {}) {
     if (!canvas || typeof canvas.getContext !== "function") {
@@ -327,6 +367,7 @@ export class Engine {
 
   onKeyDown(event) {
     if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    if (isInteractiveKeyTarget(event.target)) return;
     const tiles = this.tileSelection.getSelectedTiles();
     if (!tiles.length) return;
     event.preventDefault();

@@ -466,7 +466,7 @@ export class TileInspector {
     }
 
     this.syncValues();
-    for (const tile of changedTiles) this.onTileChange(tile, property);
+    this.onTileChange(changedTiles, property);
 
     return true;
   }

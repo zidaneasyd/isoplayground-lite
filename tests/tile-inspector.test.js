@@ -549,6 +549,43 @@ test("multi inspector shows uniform and mixed values and edits every selected ti
   inspector.destroy();
 });
 
+test("bulk property edits notify once with every changed tile and preserve unselected tiles", () => {
+  const root = makeInspectorRoot();
+  const changes = [];
+  const inspector = new TileInspector(root, {
+    onTileChange: (tiles, property) => changes.push({ tiles, property })
+  });
+  const world = new World({ width: 4, height: 1 });
+  const [first, second, third, unselected] = world.getTiles();
+  first.elevation = 1;
+  second.elevation = 3;
+  third.elevation = 5;
+  unselected.elevation = 9;
+  inspector.setTiles([first, second, third]);
+
+  assert.equal(inspector.adjustElevation(1), true);
+  assert.equal(changes.length, 1);
+  assert.deepEqual(changes[0], { tiles: [first, second, third], property: "elevation" });
+  assert.deepEqual([first.elevation, second.elevation, third.elevation, unselected.elevation], [2, 4, 6, 9]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "Mixed");
+
+  inspector.updateTileProperty("terrain", "stone");
+  assert.equal(changes.length, 2);
+  assert.deepEqual(changes[1], { tiles: [first, second, third], property: "terrain" });
+  assert.deepEqual([first.terrain, second.terrain, third.terrain, unselected.terrain], ["stone", "stone", "stone", "default"]);
+  assert.equal(root.elements.get("[data-terrain-value]").textContent, "stone");
+
+  inspector.updateTileProperty("walkable", false);
+  assert.equal(changes.length, 3);
+  assert.deepEqual(changes[2], { tiles: [first, second, third], property: "walkable" });
+  assert.deepEqual([first.walkable, second.walkable, third.walkable, unselected.walkable], [false, false, false, true]);
+  assert.equal(root.elements.get('[data-input="walkable"]').checked, false);
+
+  assert.equal(inspector.updateTileProperty("walkable", false), false);
+  assert.equal(changes.length, 3, "unchanged values do not notify");
+  inspector.destroy();
+});
+
 test("multi inspector reflects external keyboard elevation changes and selection updates", () => {
   const root = makeInspectorRoot();
   const inspector = new TileInspector(root);
@@ -703,8 +740,8 @@ test("elevation button changes report model updates", () => {
   const changes = [];
 
   const inspector = new TileInspector(root, {
-    onTileChange: (tile, property) => {
-      changes.push([tile.id, property]);
+    onTileChange: (tiles, property) => {
+      changes.push([tiles.map((tile) => tile.id), property]);
     }
   });
 
@@ -726,8 +763,8 @@ test("elevation button changes report model updates", () => {
   assert.equal(tile.elevation, 0);
 
   assert.deepEqual(changes, [
-    [tile.id, "elevation"],
-    [tile.id, "elevation"]
+    [[tile.id], "elevation"],
+    [[tile.id], "elevation"]
   ]);
 
   inspector.destroy();
@@ -790,8 +827,8 @@ test("terrain dropdown selects an option and updates tile data", () => {
   const changes = [];
 
   const inspector = new TileInspector(root, {
-    onTileChange: (tile, property) => {
-      changes.push([tile.id, property]);
+    onTileChange: (tiles, property) => {
+      changes.push([tiles.map((tile) => tile.id), property]);
     }
   });
 
@@ -842,7 +879,7 @@ test("terrain dropdown selects an option and updates tile data", () => {
   );
 
   assert.deepEqual(changes, [
-    [tile.id, "terrain"]
+    [[tile.id], "terrain"]
   ]);
 
   inspector.destroy();
@@ -1098,8 +1135,8 @@ test("walkable toggle updates tile data and reports model changes", () => {
   const changes = [];
 
   const inspector = new TileInspector(root, {
-    onTileChange: (tile, property) => {
-      changes.push([tile.id, property]);
+    onTileChange: (tiles, property) => {
+      changes.push([tiles.map((tile) => tile.id), property]);
     }
   });
 
@@ -1133,8 +1170,8 @@ test("walkable toggle updates tile data and reports model changes", () => {
   );
 
   assert.deepEqual(changes, [
-    [tile.id, "walkable"],
-    [tile.id, "walkable"]
+    [[tile.id], "walkable"],
+    [[tile.id], "walkable"]
   ]);
 
   inspector.destroy();
