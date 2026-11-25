@@ -35,13 +35,36 @@
         <strong data-value="coordinates">—</strong>
       </div>
 
-      <label class="tile-inspector__field">
+      <div class="tile-inspector__field tile-inspector__elevation">
         <span>
           <strong>Elevation</strong>
           <small>Ketinggian tile dalam unit dunia</small>
         </span>
-        <input data-input="elevation" type="number" step="any" inputmode="decimal" disabled>
-      </label>
+
+        <div class="elevation-control">
+          <button
+            class="elevation-control__button"
+            type="button"
+            data-elevation-decrease
+            aria-label="Kurangi elevation"
+            disabled
+          >−</button>
+
+          <output
+            class="elevation-control__value"
+            data-input="elevation"
+            aria-live="polite"
+          >0</output>
+
+          <button
+            class="elevation-control__button"
+            type="button"
+            data-elevation-increase
+            aria-label="Tambah elevation"
+            disabled
+          >+</button>
+        </div>
+      </div>
 
       <label class="tile-inspector__field">
         <span>

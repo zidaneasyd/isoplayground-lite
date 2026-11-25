@@ -14,7 +14,10 @@ class MockElement {
   }
 
   addEventListener(type, listener) {
-    if (!this.listeners.has(type)) this.listeners.set(type, new Set());
+    if (!this.listeners.has(type)) {
+      this.listeners.set(type, new Set());
+    }
+
     this.listeners.get(type).add(listener);
   }
 
@@ -23,7 +26,9 @@ class MockElement {
   }
 
   dispatch(type) {
-    for (const listener of this.listeners.get(type) ?? []) listener({ target: this });
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener({ target: this });
+    }
   }
 }
 
@@ -35,33 +40,50 @@ function makeInspectorRoot() {
     '[data-value="id"]',
     '[data-value="coordinates"]',
     '[data-input="elevation"]',
+    "[data-elevation-decrease]",
+    "[data-elevation-increase]",
     '[data-input="terrain"]',
     '[data-input="walkable"]'
   ];
-  const elements = new Map(selectors.map((selector) => [selector, new MockElement()]));
+
+  const elements = new Map(
+    selectors.map((selector) => [selector, new MockElement()])
+  );
+
   return {
     elements,
     querySelector: (selector) => elements.get(selector) ?? null
   };
 }
 
-test("inspector starts empty and clears/disables controls when no tile is selected", () => {
+test("inspector starts empty and disables all editing controls", () => {
   const root = makeInspectorRoot();
   const inspector = new TileInspector(root);
 
-  assert.equal(root.elements.get("[data-inspector-status]").textContent, "NO TILE SELECTED");
+  assert.equal(
+    root.elements.get("[data-inspector-status]").textContent,
+    "NO TILE SELECTED"
+  );
+
   assert.equal(root.elements.get("[data-inspector-empty]").hidden, false);
   assert.equal(root.elements.get("[data-inspector-content]").hidden, true);
-  for (const selector of ['[data-input="elevation"]', '[data-input="terrain"]', '[data-input="walkable"]']) {
+
+  for (const selector of [
+    "[data-elevation-decrease]",
+    "[data-elevation-increase]",
+    '[data-input="terrain"]',
+    '[data-input="walkable"]'
+  ]) {
     assert.equal(root.elements.get(selector).disabled, true);
   }
 
   inspector.destroy();
 });
 
-test("inspector displays identity and all mutable tile properties", () => {
+test("inspector displays selected tile identity and properties", () => {
   const root = makeInspectorRoot();
   const inspector = new TileInspector(root);
+
   const tile = new World({ width: 2, height: 2 }).getTile(1, 0);
   tile.elevation = 2.5;
   tile.terrain = "stone";
@@ -69,44 +91,144 @@ test("inspector displays identity and all mutable tile properties", () => {
 
   inspector.setTile(tile);
 
-  assert.equal(root.elements.get("[data-inspector-status]").textContent, "TILE SELECTED");
+  assert.equal(
+    root.elements.get("[data-inspector-status]").textContent,
+    "TILE SELECTED"
+  );
+
   assert.equal(root.elements.get("[data-inspector-empty]").hidden, true);
   assert.equal(root.elements.get("[data-inspector-content]").hidden, false);
-  assert.equal(root.elements.get('[data-value="id"]').textContent, "tile-1-0");
-  assert.equal(root.elements.get('[data-value="coordinates"]').textContent, "X 1  ·  Y 0");
-  assert.equal(root.elements.get('[data-input="elevation"]').value, "2.5");
-  assert.equal(root.elements.get('[data-input="terrain"]').value, "stone");
-  assert.equal(root.elements.get('[data-input="walkable"]').checked, false);
+
+  assert.equal(
+    root.elements.get('[data-value="id"]').textContent,
+    "tile-1-0"
+  );
+
+  assert.equal(
+    root.elements.get('[data-value="coordinates"]').textContent,
+    "X 1  ·  Y 0"
+  );
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "2.5"
+  );
+
+  assert.equal(
+    root.elements.get('[data-input="terrain"]').value,
+    "stone"
+  );
+
+  assert.equal(
+    root.elements.get('[data-input="walkable"]').checked,
+    false
+  );
+
+  assert.equal(root.elements.get("[data-elevation-decrease]").disabled, false);
+  assert.equal(root.elements.get("[data-elevation-increase]").disabled, false);
+
   inspector.destroy();
 });
 
-test("inspector edits elevation, terrain, and walkable and reports each model change", () => {
+test("plus button increases elevation by one unit", () => {
   const root = makeInspectorRoot();
-  const changes = [];
-  const inspector = new TileInspector(root, {
-    onTileChange: (tile, property) => changes.push([tile.id, property])
-  });
-  const tile = new World({ width: 2, height: 2 }).getTile(0, 1);
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
   inspector.setTile(tile);
 
-  const elevation = root.elements.get('[data-input="elevation"]');
-  elevation.value = "-1.25";
-  elevation.dispatch("change");
-  assert.equal(tile.elevation, -1.25);
-  assert.equal(elevation.value, "-1.25");
+  root.elements.get("[data-elevation-increase]").dispatch("click");
+
+  assert.equal(tile.elevation, 1);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "1");
+
+  inspector.destroy();
+});
+
+test("minus button decreases elevation by one unit", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
+  tile.elevation = 3;
+  inspector.setTile(tile);
+
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+
+  assert.equal(tile.elevation, 2);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "2");
+
+  inspector.destroy();
+});
+
+test("elevation controls support negative values", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
+  inspector.setTile(tile);
+
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+
+  assert.equal(tile.elevation, -1);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "-1");
+
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+
+  assert.equal(tile.elevation, -2);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "-2");
+
+  inspector.destroy();
+});
+
+test("elevation controls preserve decimal values", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
+  tile.elevation = 1.5;
+  inspector.setTile(tile);
+
+  root.elements.get("[data-elevation-increase]").dispatch("click");
+
+  assert.equal(tile.elevation, 2.5);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "2.5");
+
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+
+  assert.equal(tile.elevation, 1.5);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "1.5");
+
+  inspector.destroy();
+});
+
+test("inspector edits terrain and walkable and reports model changes", () => {
+  const root = makeInspectorRoot();
+  const changes = [];
+
+  const inspector = new TileInspector(root, {
+    onTileChange: (tile, property) => {
+      changes.push([tile.id, property]);
+    }
+  });
+
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+  inspector.setTile(tile);
 
   const terrain = root.elements.get('[data-input="terrain"]');
   terrain.value = "water";
   terrain.dispatch("change");
+
   assert.equal(tile.terrain, "water");
   assert.equal(terrain.value, "water");
 
   const walkable = root.elements.get('[data-input="walkable"]');
   walkable.checked = false;
   walkable.dispatch("change");
+
   assert.equal(tile.walkable, false);
+
   assert.deepEqual(changes, [
-    [tile.id, "elevation"],
     [tile.id, "terrain"],
     [tile.id, "walkable"]
   ]);
@@ -114,67 +236,140 @@ test("inspector edits elevation, terrain, and walkable and reports each model ch
   inspector.destroy();
 });
 
-test("inspector rejects invalid edits and restores the last valid model values", () => {
+test("elevation button changes report model updates", () => {
   const root = makeInspectorRoot();
   const changes = [];
+
   const inspector = new TileInspector(root, {
-    onTileChange: (_tile, property) => changes.push(property)
+    onTileChange: (tile, property) => {
+      changes.push([tile.id, property]);
+    }
   });
+
   const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
-  tile.elevation = 3;
-  tile.terrain = "grass";
   inspector.setTile(tile);
 
-  const elevation = root.elements.get('[data-input="elevation"]');
-  elevation.value = "not-a-number";
-  elevation.dispatch("change");
-  assert.equal(tile.elevation, 3);
-  assert.equal(elevation.value, "3");
+  root.elements.get("[data-elevation-increase]").dispatch("click");
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
 
-  const terrain = root.elements.get('[data-input="terrain"]');
-  terrain.value = "   ";
-  terrain.dispatch("change");
-  assert.equal(tile.terrain, "grass");
-  assert.equal(terrain.value, "grass");
-  assert.deepEqual(changes, []);
+  assert.equal(tile.elevation, 0);
+
+  assert.deepEqual(changes, [
+    [tile.id, "elevation"],
+    [tile.id, "elevation"]
+  ]);
 
   inspector.destroy();
 });
 
-test("inspector follows a newly selected tile and detaches listeners on destroy", () => {
+test("inspector follows newly selected tile", () => {
   const root = makeInspectorRoot();
   const inspector = new TileInspector(root);
   const world = new World({ width: 2, height: 2 });
+
   const first = world.getTile(0, 0);
   const second = world.getTile(1, 1);
 
+  first.elevation = 3;
+  second.elevation = -2;
+
   inspector.setTile(first);
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "3"
+  );
+
   inspector.setTile(second);
-  assert.equal(root.elements.get('[data-value="id"]').textContent, second.id);
 
-  const elevation = root.elements.get('[data-input="elevation"]');
+  assert.equal(
+    root.elements.get('[data-value="id"]').textContent,
+    second.id
+  );
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "-2"
+  );
+
   inspector.destroy();
-  assert.equal(elevation.listeners.get("change").size, 0);
-  elevation.value = "9";
-  elevation.dispatch("change");
-  assert.equal(second.elevation, 0);
 });
 
-test("inspector validates its root and change callback", () => {
-  assert.throws(() => new TileInspector(null), TypeError);
-  assert.throws(() => new TileInspector(makeInspectorRoot(), { onTileChange: true }), TypeError);
+test("inspector refreshes values after external tile mutation", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
+  inspector.setTile(tile);
+
+  tile.elevation = 5;
+  inspector.syncValues();
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "5"
+  );
+
+  inspector.destroy();
 });
 
-test("inspector rejects incomplete markup and safely ignores updates after destroy", () => {
-  assert.throws(() => new TileInspector({ querySelector: () => null }), /Elemen Tile Inspector tidak ditemukan/);
+test("inspector detaches all listeners on destroy", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
 
-  const inspector = new TileInspector(makeInspectorRoot());
-  assert.equal(inspector.updateTileProperty("elevation", 4), false);
-  inspector.syncValues();
+  inspector.setTile(tile);
   inspector.destroy();
+
+  for (const selector of [
+    "[data-elevation-decrease]",
+    "[data-elevation-increase]",
+    '[data-input="terrain"]',
+    '[data-input="walkable"]'
+  ]) {
+    const element = root.elements.get(selector);
+    const event = selector.includes("elevation") ? "click" : "change";
+
+    assert.equal(element.listeners.get(event)?.size ?? 0, 0);
+  }
+});
+
+test("inspector ignores button interactions after destroy", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
+  inspector.setTile(tile);
   inspector.destroy();
-  inspector.setTile(new World({ width: 1, height: 1 }).getTile(0, 0));
-  inspector.syncValues();
-  assert.equal(inspector.updateTileProperty("elevation", 4), false);
+
+  root.elements.get("[data-elevation-increase]").dispatch("click");
+
+  assert.equal(tile.elevation, 0);
   assert.equal(inspector.currentTile, null);
+});
+
+test("inspector validates root and change callback", () => {
+  assert.throws(() => new TileInspector(null), TypeError);
+
+  assert.throws(
+    () => new TileInspector(makeInspectorRoot(), { onTileChange: true }),
+    TypeError
+  );
+});
+
+test("inspector rejects incomplete markup", () => {
+  assert.throws(
+    () => new TileInspector({ querySelector: () => null }),
+    /Elemen Tile Inspector tidak ditemukan/
+  );
+});
+
+test("inspector safely ignores updates without selected tile", () => {
+  const inspector = new TileInspector(makeInspectorRoot());
+
+  assert.equal(inspector.adjustElevation(1), false);
+  assert.equal(inspector.updateTileProperty("elevation", 4), false);
+
+  inspector.destroy();
+  inspector.destroy();
 });
