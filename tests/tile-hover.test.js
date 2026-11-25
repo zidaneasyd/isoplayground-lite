@@ -111,7 +111,7 @@ test("tile hover rejects invalid coordinates and invalid views safely", () => {
   }), null);
 });
 
-test("TileSelection stores a persistent tile reference and supports replacement and clearing", () => {
+test("TileSelection stores unique persistent references and maintains a focused tile", () => {
   const view = makeView({ width: 2, height: 2 });
   const selection = new TileSelection();
   const first = view.world.getTile(0, 0);
@@ -123,6 +123,12 @@ test("TileSelection stores a persistent tile reference and supports replacement 
   assert.equal(selection.select(first), false);
   assert.equal(selection.select(second), true);
   assert.equal(selection.selectedTile, second);
+  assert.equal(selection.add(first), true);
+  assert.equal(selection.add(first), false);
+  assert.deepEqual(selection.getSelectedTiles(), [second, first]);
+  assert.equal(selection.remove(second.id), true);
+  assert.equal(selection.selectedTile, first);
+  assert.equal(selection.remove(second), false);
   assert.equal(selection.clear(), true);
   assert.equal(selection.selectedTile, null);
   assert.equal(selection.clear(), false);

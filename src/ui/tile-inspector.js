@@ -1,3 +1,5 @@
+import { updateTilesProperty } from "../world/tile-properties.js";
+
 /**
  * DOM view for inspecting and editing the currently selected tile.
  * It does not own tile data; edits are applied to the persistent Tile instance.
@@ -19,6 +21,7 @@ export class TileInspector {
     this.root = root;
     this.onTileChange = onTileChange;
     this.currentTile = null;
+    this.currentTiles = [];
     this.destroyed = false;
 
     this.document =
@@ -46,6 +49,10 @@ export class TileInspector {
 
     this.coordinatesValue = this.requireElement(
       '[data-value="coordinates"]'
+    );
+
+    this.identitySection = this.requireElement(
+      "[data-inspector-identity]"
     );
 
     this.elevationValue = this.requireElement(
@@ -123,12 +130,12 @@ export class TileInspector {
     this.onWalkableChange = () => {
       this.updateTileProperty(
         "walkable",
-        this.walkableInput.checked
+        this.walkableInput.indeterminate ? true : this.walkableInput.checked
       );
     };
 
     this.onTerrainTriggerClick = () => {
-      if (!this.currentTile || this.destroyed) {
+      if (!this.currentTiles.length || this.destroyed) {
         return;
       }
 
@@ -172,7 +179,7 @@ export class TileInspector {
 
     for (const option of this.terrainOptions) {
       const handler = () => {
-        if (!this.currentTile || this.destroyed) {
+        if (!this.currentTiles.length || this.destroyed) {
           return;
         }
 
@@ -283,7 +290,7 @@ export class TileInspector {
   setTerrainMenuOpen(open) {
     const shouldOpen = Boolean(
       open &&
-      this.currentTile &&
+      this.currentTiles.length > 0 &&
       !this.destroyed
     );
 
@@ -330,30 +337,41 @@ export class TileInspector {
    * Passing null resets the inspector to its empty state.
    */
   setTile(tile) {
+    return this.setTiles(tile ? [tile] : []);
+  }
+
+  /** Updates the view from persistent tile references owned by TileSelection. */
+  setTiles(tiles) {
     if (this.destroyed) {
-      return;
+      return false;
     }
 
     // Close dropdown whenever the selected tile changes.
     this.closeTerrainMenu();
 
-    this.currentTile = tile ?? null;
+    this.currentTiles = Array.from(tiles ?? []);
+    this.currentTile = this.currentTiles.length === 1 ? this.currentTiles[0] : null;
 
-    const hasTile = this.currentTile !== null;
+    const count = this.currentTiles.length;
+    const hasTiles = count > 0;
+    const isMultiple = count > 1;
 
-    this.status.textContent = hasTile
-      ? "TILE SELECTED"
-      : "NO TILE SELECTED";
+    this.status.textContent = isMultiple
+      ? `MULTI TILE SELECTED (${count})`
+      : hasTiles
+        ? "TILE SELECTED"
+        : "NO TILE SELECTED";
 
-    this.emptyState.hidden = hasTile;
-    this.content.hidden = !hasTile;
+    this.emptyState.hidden = hasTiles;
+    this.content.hidden = !hasTiles;
+    this.identitySection.hidden = isMultiple;
 
-    this.elevationDecrease.disabled = !hasTile;
-    this.elevationIncrease.disabled = !hasTile;
-    this.terrainTrigger.disabled = !hasTile;
-    this.walkableInput.disabled = !hasTile;
+    this.elevationDecrease.disabled = !hasTiles;
+    this.elevationIncrease.disabled = !hasTiles;
+    this.terrainTrigger.disabled = !hasTiles;
+    this.walkableInput.disabled = !hasTiles;
 
-    if (!hasTile) {
+    if (!hasTiles) {
       this.idValue.textContent = "—";
       this.coordinatesValue.textContent = "—";
       this.elevationValue.textContent = "0";
@@ -361,11 +379,13 @@ export class TileInspector {
       this.syncTerrainValue("—");
 
       this.walkableInput.checked = false;
+      this.walkableInput.indeterminate = false;
 
-      return;
+      return true;
     }
 
     this.syncValues();
+    return true;
   }
 
   // --------------------------------------------------
@@ -377,23 +397,30 @@ export class TileInspector {
    * Also used after external tile mutations.
    */
   syncValues() {
-    if (!this.currentTile || this.destroyed) {
+    if (!this.currentTiles.length || this.destroyed) {
       return;
     }
 
-    const tile = this.currentTile;
+    const values = (property) => this.currentTiles.map((tile) => tile[property]);
+    const uniformValue = (property) => {
+      const [first, ...rest] = values(property);
+      return rest.every((value) => Object.is(value, first)) ? first : "Mixed";
+    };
 
-    this.idValue.textContent = tile.id;
+    if (this.currentTiles.length === 1) {
+      const tile = this.currentTiles[0];
+      this.idValue.textContent = tile.id;
+      this.coordinatesValue.textContent = `X ${tile.x}  ·  Y ${tile.y}`;
+    } else {
+      this.idValue.textContent = "—";
+      this.coordinatesValue.textContent = "—";
+    }
 
-    this.coordinatesValue.textContent =
-      `X ${tile.x}  ·  Y ${tile.y}`;
-
-    this.elevationValue.textContent =
-      String(tile.elevation);
-
-    this.syncTerrainValue(tile.terrain);
-
-    this.walkableInput.checked = tile.walkable;
+    this.elevationValue.textContent = String(uniformValue("elevation"));
+    this.syncTerrainValue(uniformValue("terrain"));
+    const walkable = uniformValue("walkable");
+    this.walkableInput.indeterminate = walkable === "Mixed";
+    this.walkableInput.checked = walkable === true;
   }
 
   // --------------------------------------------------
@@ -406,19 +433,16 @@ export class TileInspector {
    */
   adjustElevation(step) {
     if (
-      !this.currentTile ||
+      !this.currentTiles.length ||
       this.destroyed ||
       !Number.isFinite(step)
     ) {
       return false;
     }
 
-    const nextElevation =
-      this.currentTile.elevation + step;
-
     return this.updateTileProperty(
       "elevation",
-      nextElevation
+      (elevation) => elevation + step
     );
   }
 
@@ -431,32 +455,18 @@ export class TileInspector {
    * Invalid values are rejected by the Tile model.
    */
   updateTileProperty(property, value) {
-    if (!this.currentTile || this.destroyed) {
+    if (!this.currentTiles.length || this.destroyed) {
       return false;
     }
 
-    const supportedProperties = [
-      "elevation",
-      "terrain",
-      "walkable"
-    ];
-
-    if (!supportedProperties.includes(property)) {
-      return false;
-    }
-
-    const tile = this.currentTile;
-
-    try {
-      tile[property] = value;
-    } catch {
+    const changedTiles = updateTilesProperty(this.currentTiles, property, value);
+    if (!changedTiles.length) {
       this.syncValues();
       return false;
     }
 
     this.syncValues();
-
-    this.onTileChange(tile, property);
+    this.onTileChange(changedTiles, property);
 
     return true;
   }
@@ -525,6 +535,7 @@ export class TileInspector {
     this.closeTerrainMenu();
 
     this.currentTile = null;
+    this.currentTiles = [];
     this.destroyed = true;
   }
 }

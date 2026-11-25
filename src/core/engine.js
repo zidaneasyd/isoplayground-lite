@@ -5,9 +5,53 @@ import { Renderer } from "../rendering/renderer.js";
 import { screenToGrid, screenToTile } from "../world/coordinates.js";
 import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
+import { ObjectPlacement } from "../interaction/object-placement.js";
+import { ObjectSelection } from "../interaction/object-selection.js";
+import { AssetManager } from "../assets/asset-manager.js";
+import { updateTilesProperty } from "../world/tile-properties.js";
+
+const INTERACTIVE_ROLES = new Set([
+  "button", "checkbox", "combobox", "listbox", "menu", "menuitem",
+  "menuitemcheckbox", "menuitemradio", "option", "radio", "radiogroup",
+  "searchbox", "slider", "spinbutton", "switch", "tab", "textbox",
+  "tree", "treeitem"
+]);
+const INTERACTIVE_TARGET_SELECTOR = [
+  "input", "textarea", "select", "button", "a[href]", "summary",
+  "[contenteditable]:not([contenteditable=\"false\"])" ,
+  ...[...INTERACTIVE_ROLES].map((role) => `[role=\"${role}\"]`)
+].join(", ");
+
+function isInteractiveKeyTarget(target) {
+  if (!target || typeof target !== "object") return false;
+
+  if (typeof target.closest === "function") {
+    try {
+      if (target.closest(INTERACTIVE_TARGET_SELECTOR)) return true;
+    } catch {
+      // Non-DOM target stubs may expose an incompatible closest method.
+    }
+  }
+
+  const tagName = typeof target.tagName === "string"
+    ? target.tagName.toLowerCase()
+    : typeof target.localName === "string"
+      ? target.localName.toLowerCase()
+      : "";
+  if (["input", "textarea", "select", "button"].includes(tagName)) return true;
+  if (target.isContentEditable === true) return true;
+
+  const getAttribute = typeof target.getAttribute === "function"
+    ? target.getAttribute.bind(target)
+    : null;
+  if (getAttribute && getAttribute("contenteditable") !== null &&
+      String(getAttribute("contenteditable")).toLowerCase() !== "false") return true;
+  const role = getAttribute?.("role");
+  return typeof role === "string" && INTERACTIVE_ROLES.has(role.toLowerCase());
+}
 
 export class Engine {
-  constructor(canvas, config, { onSelectionChange = null } = {}) {
+  constructor(canvas, config, { onSelectionChange = null, onElevationChange = null, onObjectSelectionChange = null, assetManager = null } = {}) {
     if (!canvas || typeof canvas.getContext !== "function") {
       throw new TypeError("Engine membutuhkan elemen canvas yang valid.");
     }
@@ -19,15 +63,33 @@ export class Engine {
     if (onSelectionChange !== null && typeof onSelectionChange !== "function") {
       throw new TypeError("onSelectionChange harus berupa function atau null.");
     }
+    if (onElevationChange !== null && typeof onElevationChange !== "function") {
+      throw new TypeError("onElevationChange harus berupa function atau null.");
+    }
+    if (onObjectSelectionChange !== null && typeof onObjectSelectionChange !== "function") {
+      throw new TypeError("onObjectSelectionChange harus berupa function atau null.");
+    }
+    if (assetManager !== null && (
+      typeof assetManager.load !== "function" ||
+      typeof assetManager.get !== "function" ||
+      typeof assetManager.remove !== "function" ||
+      typeof assetManager.clear !== "function"
+    )) {
+      throw new TypeError("assetManager harus menyediakan load(), get(), remove(), dan clear().");
+    }
 
     this.config = config;
     this.onSelectionChange = onSelectionChange;
+    this.onElevationChange = onElevationChange;
+    this.onObjectSelectionChange = onObjectSelectionChange;
+    this.assets = assetManager ?? new AssetManager();
     this.world = new World(config.world);
     this.camera = new Camera(config.camera);
-    this.renderer = new Renderer(this.ctx, config);
+    this.renderer = new Renderer(this.ctx, config, { assetManager: this.assets });
     this.tileHover = new TileHover();
     this.tileSelection = new TileSelection();
-    this.pointerDownPosition = null;
+    this.objectPlacement = new ObjectPlacement(this.world);
+    this.objectSelection = new ObjectSelection(this.world);
     this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
@@ -35,9 +97,7 @@ export class Engine {
     );
 
     this.destroyed = false;
-    this.dragPointerId = null;
-    this.lastPointerX = 0;
-    this.lastPointerY = 0;
+    this.pointerSession = null;
 
     this.resize = this.resize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -45,6 +105,8 @@ export class Engine {
     this.onPointerLeave = this.onPointerLeave.bind(this);
     this.onPointerEnd = this.onPointerEnd.bind(this);
     this.onWheel = this.onWheel.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
+    this.onContextMenu = (event) => event.preventDefault();
 
     window.addEventListener("resize", this.resize);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
@@ -54,6 +116,8 @@ export class Engine {
     this.canvas.addEventListener("pointercancel", this.onPointerEnd);
     this.canvas.addEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
+    window.addEventListener("keydown", this.onKeyDown);
 
     this.resize();
   }
@@ -133,17 +197,125 @@ export class Engine {
     return this.tileSelection.selectedTile;
   }
 
+  getSelectedTiles() { return this.tileSelection.getSelectedTiles(); }
+
+  getSelectedObject() { return this.objectSelection.selectedObject; }
+
+  notifyObjectSelectionChange() {
+    this.onObjectSelectionChange?.(this.objectSelection.selectedObject);
+  }
+
+  removeWorldObject(id) {
+    const removed = this.world.objects.remove(id);
+    if (!removed) return false;
+    if (this.objectSelection.selectedObjectId === id) {
+      this.objectSelection.clear();
+      this.notifyObjectSelectionChange();
+    }
+    this.refreshWorldView();
+    return true;
+  }
+
   /** Updates hover using client coordinates and the current camera transform. */
   updateHoverAtClientPoint(clientX, clientY) {
     this.lastPointerClientPosition = { x: clientX, y: clientY };
     const point = this.clientToCanvas(clientX, clientY);
-    if (!point) return this.tileHover.clear();
-    return this.tileHover.update(point.x, point.y, this.getView());
+    const hoverChanged = point
+      ? this.tileHover.update(point.x, point.y, this.getView())
+      : this.tileHover.clear();
+    return this.updateObjectPlacementPreviewFromHover() || hoverChanged;
   }
 
   clearHover() {
     this.lastPointerClientPosition = null;
-    return this.tileHover.clear();
+    const hoverChanged = this.tileHover.clear();
+    return this.updateObjectPlacementPreviewFromHover() || hoverChanged;
+  }
+
+  /** Updates the placement candidate from the tile currently under the pointer. */
+  updateObjectPlacementPreviewFromHover() {
+    if (!this.objectPlacement.active) return false;
+    const tile = this.tileHover.hoveredTile;
+    const previous = this.objectPlacement.getPreview();
+    this.objectPlacement.updatePreview(tile?.x ?? null, tile?.y ?? null);
+    const next = this.objectPlacement.getPreview();
+    return (
+      previous.mode !== next.mode ||
+      previous.objectId !== next.objectId ||
+      previous.x !== next.x ||
+      previous.y !== next.y ||
+      previous.valid !== next.valid ||
+      previous.reason !== next.reason
+    );
+  }
+
+  /** Starts a new-object placement session. The object is stored only on commit. */
+  beginObjectPlacement(object) {
+    if (this.destroyed) return false;
+    this.objectPlacement.beginPlacement(object);
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    } else {
+      this.objectPlacement.updatePreview(null, null);
+    }
+    this.render();
+    return true;
+  }
+
+  /** Starts moving a stored object by ID. */
+  beginObjectMove(id) {
+    if (this.destroyed || !this.objectPlacement.beginMove(id)) return false;
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    }
+    this.render();
+    return true;
+  }
+
+  /** Cancels the active placement/move and removes its preview. */
+  cancelObjectPlacement() {
+    const cancelled = this.objectPlacement.cancel();
+    if (cancelled) this.render();
+    return cancelled;
+  }
+
+  /** Commits the current valid preview, or returns false while it is invalid. */
+  confirmObjectPlacement() {
+    const object = this.objectPlacement.confirm();
+    if (object) {
+      if (this.objectSelection.select(object.id)) this.notifyObjectSelectionChange();
+      this.refreshWorldView();
+    }
+    else if (this.objectPlacement.active) this.render();
+    return object;
+  }
+
+  getObjectPlacementPreview() {
+    return this.objectPlacement.getPreview();
+  }
+
+  /** Loads a sprite asset and redraws the world when the image is ready. */
+  loadSprite(assetId, source, options = {}) {
+    if (this.destroyed) {
+      return Promise.reject(new Error("Engine sudah dihancurkan dan tidak dapat memuat asset."));
+    }
+    return this.assets.load(assetId, source, options).then((image) => {
+      if (!this.destroyed) this.render();
+      return image;
+    });
+  }
+
+  /** Removes a sprite asset registration and redraws objects using that asset. */
+  removeSprite(assetId) {
+    const removed = this.assets.remove(assetId);
+    if (removed && !this.destroyed) this.render();
+    return removed;
   }
 
   /** Koordinat grid kontinu di bawah pointer, atau null bila di luar Canvas. */
@@ -185,35 +357,102 @@ export class Engine {
   }
 
   onPointerDown(event) {
-    if (event.button !== 0 || this.dragPointerId !== null) return;
-    if (event.isPrimary === false || !Number.isFinite(event.pointerId)) return;
+    if (this.pointerSession || ![0, 1, 2].includes(event.button) || !Number.isFinite(event.pointerId)) return;
+    if (event.button === 0 && event.isPrimary === false) return;
 
-    this.dragPointerId = event.pointerId;
-    this.lastPointerX = event.clientX;
-    this.lastPointerY = event.clientY;
-    this.pointerDownPosition = Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
-      ? { x: event.clientX, y: event.clientY }
-      : null;
-    this.canvas.classList?.add("is-dragging");
+    if (this.objectPlacement.active && event.button === 2) {
+      event.preventDefault?.();
+      this.cancelObjectPlacement();
+      return;
+    }
+
+    const pan = event.button === 1;
+    const mode = pan ? "pan" : this.objectPlacement.active && event.button === 0
+      ? "object-placement"
+      : event.button === 0
+        ? (event.shiftKey ? "add" : "select")
+        : (event.shiftKey ? "remove" : null);
+    if (!mode) return;
+
+    this.pointerSession = {
+      pointerId: event.pointerId,
+      mode,
+      downX: event.clientX,
+      downY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      processed: new Set()
+    };
+    if (pan) this.canvas.classList?.add("is-dragging");
     this.canvas.setPointerCapture?.(event.pointerId);
-    if (this.updateHoverAtClientPoint(event.clientX, event.clientY)) this.render();
+    const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+    let selectionChanged = false;
+    if (mode === "add" || mode === "remove") selectionChanged = this.processSelectionPoint(event.clientX, event.clientY);
+    if (selectionChanged) this.notifySelectionChange();
+    if (hoverChanged || selectionChanged) this.render();
+  }
+
+  processSelectionPoint(clientX, clientY) {
+    const session = this.pointerSession;
+    const point = this.clientToCanvas(clientX, clientY);
+    if (!point) return false;
+    this.tileHover.update(point.x, point.y, this.getView());
+    const tile = this.tileHover.hoveredTile;
+    if (!session || !tile || session.processed.has(tile.id)) return false;
+    session.processed.add(tile.id);
+    return session.mode === "add" ? this.tileSelection.add(tile) : this.tileSelection.remove(tile.id);
+  }
+
+  processSelectionSegment(fromX, fromY, toX, toY) {
+    const scale = this.getCanvasClientScale();
+    const step = Math.max(1, Math.min(
+      this.config.tile.width * this.camera.zoom / scale.x,
+      this.config.tile.height * this.camera.zoom / scale.y
+    ) * 0.35);
+    const distance = Math.hypot(toX - fromX, toY - fromY);
+    const count = Math.max(1, Math.ceil(distance / step));
+    let changed = false;
+    for (let index = 1; index <= count; index++) {
+      const ratio = index / count;
+      changed = this.processSelectionPoint(
+        fromX + (toX - fromX) * ratio,
+        fromY + (toY - fromY) * ratio
+      ) || changed;
+    }
+    return changed;
+  }
+
+  notifySelectionChange() {
+    this.onSelectionChange?.(
+      this.tileSelection.selectedTile,
+      this.tileSelection.getSelectedTiles()
+    );
   }
 
   onPointerMove(event) {
-    if (this.dragPointerId !== null && event.pointerId !== this.dragPointerId) return;
+    const session = this.pointerSession;
+    if (session && event.pointerId !== session.pointerId) return;
 
     let cameraChanged = false;
-    if (event.pointerId === this.dragPointerId) {
+    let selectionChanged = false;
+    if (session?.mode === "pan") {
       const scale = this.getCanvasClientScale();
-      const deltaX = (event.clientX - this.lastPointerX) * scale.x;
-      const deltaY = (event.clientY - this.lastPointerY) * scale.y;
-      this.lastPointerX = event.clientX;
-      this.lastPointerY = event.clientY;
+      const deltaX = (event.clientX - session.lastX) * scale.x;
+      const deltaY = (event.clientY - session.lastY) * scale.y;
+      session.lastX = event.clientX;
+      session.lastY = event.clientY;
       cameraChanged = this.camera.panBy(deltaX, deltaY, this.getCameraBounds());
+    } else if (session?.mode === "add" || session?.mode === "remove") {
+      selectionChanged = this.processSelectionSegment(
+        session.lastX, session.lastY, event.clientX, event.clientY
+      );
+      session.lastX = event.clientX;
+      session.lastY = event.clientY;
     }
 
     const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
-    if (cameraChanged || hoverChanged) this.render();
+    if (selectionChanged) this.notifySelectionChange();
+    if (cameraChanged || hoverChanged || selectionChanged) this.render();
   }
 
   onPointerLeave() {
@@ -221,10 +460,11 @@ export class Engine {
   }
 
   onPointerEnd(event) {
-    if (event.pointerId !== this.dragPointerId) return;
+    const session = this.pointerSession;
+    if (!session || event.pointerId !== session.pointerId) return;
 
-    this.dragPointerId = null;
-    this.canvas.classList?.remove("is-dragging");
+    this.pointerSession = null;
+    if (session.mode === "pan") this.canvas.classList?.remove("is-dragging");
 
     let hoverChanged = false;
     let selectionChanged = false;
@@ -235,20 +475,60 @@ export class Engine {
       hoverChanged = this.clearHover();
     } else if (hasReleasePoint) {
       hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
-      if (this.pointerDownPosition) {
+      if (session.mode === "select" || session.mode === "object-placement") {
         const scale = this.getCanvasClientScale();
-        const dx = (event.clientX - this.pointerDownPosition.x) * scale.x;
-        const dy = (event.clientY - this.pointerDownPosition.y) * scale.y;
+        const dx = (event.clientX - session.downX) * scale.x;
+        const dy = (event.clientY - session.downY) * scale.y;
         const clickDistance = Math.hypot(dx, dy);
-        // A small tolerance accommodates pointer jitter without treating a pan as a click.
+        // A small tolerance accommodates pointer jitter without treating a drag as a click.
         if (clickDistance <= 4) {
-          selectionChanged = this.tileSelection.select(this.tileHover.hoveredTile);
-          if (selectionChanged) this.onSelectionChange?.(this.tileSelection.selectedTile);
+          if (session.mode === "object-placement") {
+            this.confirmObjectPlacement();
+          } else {
+            const tile = this.tileHover.hoveredTile;
+            const object = tile ? this.objectSelection.selectAt(tile.x, tile.y) : null;
+            if (object) {
+              this.notifyObjectSelectionChange();
+            } else {
+              const objectCleared = this.objectSelection.clear();
+              if (objectCleared) this.notifyObjectSelectionChange();
+              if (tile) {
+                const focused = this.tileSelection.selectedTile;
+                if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
+                  selectionChanged = this.tileSelection.clear();
+                } else {
+                  selectionChanged = this.tileSelection.select(tile);
+                }
+              }
+              if (selectionChanged) this.notifySelectionChange();
+            }
+          }
         }
       }
     }
-    this.pointerDownPosition = null;
     if (hoverChanged || selectionChanged) this.render();
+  }
+
+  onKeyDown(event) {
+    if (isInteractiveKeyTarget(event.target)) return;
+    if (event.key === "Escape" && this.objectPlacement.active) {
+      event.preventDefault();
+      this.cancelObjectPlacement();
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const tiles = this.tileSelection.getSelectedTiles();
+    if (!tiles.length) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowUp" ? 1 : -1;
+    const changedTiles = updateTilesProperty(
+      tiles,
+      "elevation",
+      (elevation) => elevation + delta
+    );
+    if (!changedTiles.length) return;
+    this.onElevationChange?.(this.tileSelection.selectedTile, tiles);
+    this.refreshWorldView();
   }
 
   onWheel(event) {
@@ -291,7 +571,9 @@ export class Engine {
   render() {
     this.renderer.render(this.world, this.camera, {
       hoveredTileId: this.tileHover.hoveredTile?.id ?? null,
-      selectedTileId: this.tileSelection.selectedTile?.id ?? null
+      selectedTileIds: this.tileSelection.selectedTiles.map((tile) => tile.id),
+      objectPlacementPreview: this.objectPlacement.getPreview(),
+      selectedObjectId: this.objectSelection.selectedObjectId
     });
   }
 
@@ -316,10 +598,14 @@ export class Engine {
     this.canvas.removeEventListener("pointercancel", this.onPointerEnd);
     this.canvas.removeEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.removeEventListener("wheel", this.onWheel);
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
+    window.removeEventListener("keydown", this.onKeyDown);
     this.canvas.classList?.remove("is-dragging");
-    this.dragPointerId = null;
-    this.pointerDownPosition = null;
+    this.pointerSession = null;
+    this.objectPlacement.cancel();
+    this.assets.clear();
     this.clearHover();
-    if (this.tileSelection.clear()) this.onSelectionChange?.(null);
+    if (this.tileSelection.clear()) this.notifySelectionChange();
+    if (this.objectSelection.clear()) this.notifyObjectSelectionChange();
   }
 }

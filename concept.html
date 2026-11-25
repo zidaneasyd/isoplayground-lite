@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Isometric Grid 12×12 (64×32)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body, html {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #141414;
+      user-select: none;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      cursor: crosshair;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="isoCanvas"></canvas>
+
+  <div class="fixed top-4 left-4 z-10 bg-[#1e1e1e]/90 border border-neutral-800 rounded-xl px-4 py-3 text-xs text-neutral-200 space-y-1.5">
+    <div>Hover: <span id="hoverCoord" class="font-mono text-neutral-400">—</span></div>
+    <div>Active: <span id="activeCoord" class="font-mono text-cyan-400">None</span></div>
+    <div>Elevation: <span id="elevationInfo" class="font-mono text-amber-300">0px (Lv. 0)</span></div>
+    <div class="text-[11px] text-neutral-500 pt-0.5 space-y-0.5">
+      <div>Klik: pilih/lepas • <span class="font-mono text-neutral-300">Shift</span> + drag/klik kiri: tambah</div>
+      <div><span class="font-mono text-neutral-300">Shift</span> + drag/klik kanan: unactive</div>
+      <div>Aktifkan tile lalu tekan <span class="font-mono text-neutral-300">↑</span> (+8px) / <span class="font-mono text-neutral-300">↓</span> (-8px)</div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const canvas = document.getElementById('isoCanvas');
+      const ctx = canvas.getContext('2d', { alpha: false });
+      const hoverCoordEl = document.getElementById('hoverCoord');
+      const activeCoordEl = document.getElementById('activeCoord');
+      const elevationInfoEl = document.getElementById('elevationInfo');
+
+      const GRID_SIZE = 12;
+      const TILE_WIDTH = 64;
+      const TILE_HEIGHT = 32;
+      const HALF_W = TILE_WIDTH / 2;
+      const HALF_H = TILE_HEIGHT / 2;
+      const ELEVATION_STEP = 8;
+
+      const COLORS = {
+        bg: '#141414',
+        tileFill: '#3a3a3a',
+        tileStroke: '#525252',
+        leftWallFill: '#262626',
+        rightWallFill: '#2f2f2f',
+        hoverFill: 'rgba(125, 211, 252, 0.2)',
+        hoverStroke: '#7dd3fc',
+        activeFill: '#0e7490',
+        activeLeftWall: '#083344',
+        activeRightWall: '#155e75',
+        activeStroke: '#22d3ee'
+      };
+
+      let width = 0;
+      let height = 0;
+      let originX = 0;
+      let originY = 0;
+      let hoveredTile = null;
+
+      // Key "x,y" -> { x, y, level }
+      const activeTiles = new Map();
+      // Key "x,y" -> level (persists elevation even when unselected)
+      const tileElevations = new Map();
+
+      let isShiftDragging = false;
+      let shiftAction = 'select'; // 'select' | 'unselect'
+      const shiftVisitedKeys = new Set();
+      let renderScheduled = false;
+
+      function tileKey(x, y) {
+        return `${x},${y}`;
+      }
+
+      function getLevel(x, y) {
+        return tileElevations.get(tileKey(x, y)) || 0;
+      }
+
+      function setLevel(x, y, level) {
+        const clamped = Math.max(0, level);
+        const key = tileKey(x, y);
+        if (clamped === 0) {
+          tileElevations.delete(key);
+        } else {
+          tileElevations.set(key, clamped);
+        }
+        if (activeTiles.has(key)) {
+          activeTiles.get(key).level = clamped;
+        }
+      }
+
+      function updateOrigin() {
+        originX = Math.round(width / 2);
+        originY = Math.round(height / 2 - (GRID_SIZE * TILE_HEIGHT) / 2);
+      }
+
+      function resizeCanvas() {
+        width = window.innerWidth;
+        height = window.innerHeight;
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+
+        canvas.width = Math.round(width * dpr);
+        canvas.height = Math.round(height * dpr);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        updateOrigin();
+        scheduleRender();
+      }
+
+      function gridToScreen(gx, gy, elevPx = 0) {
+        return {
+          x: originX + (gx - gy) * HALF_W,
+          y: originY + (gx + gy) * HALF_H - elevPx
+        };
+      }
+
+      function screenToGrid(px, py) {
+        for (let gy = GRID_SIZE - 1; gy >= 0; gy--) {
+          for (let gx = GRID_SIZE - 1; gx >= 0; gx--) {
+            const elevPx = getLevel(gx, gy) * ELEVATION_STEP;
+            const { x, y } = gridToScreen(gx, gy, elevPx);
+            const dx = px - x;
+            const dy = py - (y + HALF_H);
+            if (Math.abs(dx) / HALF_W + Math.abs(dy) / HALF_H <= 1) {
+              return { x: gx, y: gy };
+            }
+          }
+        }
+        return null;
+      }
+
+      function traceTilePath(x, y) {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x + HALF_W, y + HALF_H);
+        ctx.lineTo(x, y + TILE_HEIGHT);
+        ctx.lineTo(x - HALF_W, y + HALF_H);
+        ctx.closePath();
+      }
+
+      function drawElevationWalls(x, y, elevPx, isActive) {
+        if (elevPx <= 0) return;
+
+        ctx.beginPath();
+        ctx.moveTo(x - HALF_W, y + HALF_H);
+        ctx.lineTo(x, y + TILE_HEIGHT);
+        ctx.lineTo(x, y + TILE_HEIGHT + elevPx);
+        ctx.lineTo(x - HALF_W, y + HALF_H + elevPx);
+        ctx.closePath();
+        ctx.fillStyle = isActive ? COLORS.activeLeftWall : COLORS.leftWallFill;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = isActive ? COLORS.activeStroke : COLORS.tileStroke;
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.moveTo(x, y + TILE_HEIGHT);
+        ctx.lineTo(x + HALF_W, y + HALF_H);
+        ctx.lineTo(x + HALF_W, y + HALF_H + elevPx);
+        ctx.lineTo(x, y + TILE_HEIGHT + elevPx);
+        ctx.closePath();
+        ctx.fillStyle = isActive ? COLORS.activeRightWall : COLORS.rightWallFill;
+        ctx.fill();
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = isActive ? COLORS.activeStroke : COLORS.tileStroke;
+        ctx.stroke();
+      }
+
+      function drawTile(gx, gy) {
+        const key = tileKey(gx, gy);
+        const level = getLevel(gx, gy);
+        const elevPx = level * ELEVATION_STEP;
+        const { x, y } = gridToScreen(gx, gy, elevPx);
+        const isHovered = hoveredTile && hoveredTile.x === gx && hoveredTile.y === gy;
+        const isActive = activeTiles.has(key);
+
+        drawElevationWalls(x, y, elevPx, isActive);
+
+        traceTilePath(x, y);
+        ctx.fillStyle = isActive ? COLORS.activeFill : COLORS.tileFill;
+        ctx.fill();
+
+        if (isHovered && !isActive) {
+          ctx.fillStyle = COLORS.hoverFill;
+          ctx.fill();
+        }
+
+        ctx.lineWidth = isActive ? 2 : isHovered ? 1.5 : 1;
+        ctx.strokeStyle = isActive
+          ? COLORS.activeStroke
+          : isHovered
+            ? COLORS.hoverStroke
+            : COLORS.tileStroke;
+        ctx.stroke();
+      }
+
+      function renderNow() {
+        renderScheduled = false;
+        ctx.fillStyle = COLORS.bg;
+        ctx.fillRect(0, 0, width, height);
+
+        const list = [];
+        for (let gy = 0; gy < GRID_SIZE; gy++) {
+          for (let gx = 0; gx < GRID_SIZE; gx++) {
+            list.push({ gx, gy, depth: gx + gy, level: getLevel(gx, gy) });
+          }
+        }
+
+        list.sort((a, b) => (a.depth - b.depth) || (a.level - b.level));
+
+        for (let i = 0; i < list.length; i++) {
+          drawTile(list[i].gx, list[i].gy);
+        }
+      }
+
+      function scheduleRender() {
+        if (renderScheduled) return;
+        renderScheduled = true;
+        requestAnimationFrame(renderNow);
+      }
+
+      function updateHUD() {
+        if (hoveredTile) {
+          const hLv = getLevel(hoveredTile.x, hoveredTile.y);
+          hoverCoordEl.textContent = `${hoveredTile.x}, ${hoveredTile.y} (Lv.${hLv})`;
+        } else {
+          hoverCoordEl.textContent = '—';
+        }
+
+        if (activeTiles.size === 0) {
+          activeCoordEl.textContent = 'None';
+          elevationInfoEl.textContent = '0px (Lv. 0)';
+        } else if (activeTiles.size === 1) {
+          const [only] = activeTiles.values();
+          const lv = getLevel(only.x, only.y);
+          activeCoordEl.textContent = `${only.x}, ${only.y}`;
+          elevationInfoEl.textContent = `${lv * ELEVATION_STEP}px (Lv. ${lv})`;
+        } else {
+          let maxLv = 0;
+          for (const t of activeTiles.values()) {
+            maxLv = Math.max(maxLv, getLevel(t.x, t.y));
+          }
+          activeCoordEl.textContent = `${activeTiles.size} tiles`;
+          elevationInfoEl.textContent = `max ${maxLv * ELEVATION_STEP}px (Lv. ${maxLv})`;
+        }
+      }
+
+      function isSameTile(a, b) {
+        return a === b || (a && b && a.x === b.x && a.y === b.y);
+      }
+
+      function applyShiftTile(tile, action) {
+        if (!tile) return false;
+        const key = tileKey(tile.x, tile.y);
+        if (shiftVisitedKeys.has(key)) return false;
+        shiftVisitedKeys.add(key);
+
+        if (action === 'select') {
+          if (activeTiles.has(key)) return false;
+          activeTiles.set(key, { x: tile.x, y: tile.y, level: getLevel(tile.x, tile.y) });
+          return true;
+        } else {
+          if (!activeTiles.has(key)) return false;
+          activeTiles.delete(key);
+          return true;
+        }
+      }
+
+      function getCanvasTile(clientX, clientY) {
+        const rect = canvas.getBoundingClientRect();
+        return screenToGrid(clientX - rect.left, clientY - rect.top);
+      }
+
+      canvas.addEventListener('contextmenu', (e) => {
+        e.preventDefault();
+      });
+
+      canvas.addEventListener('mousedown', (e) => {
+        const tile = getCanvasTile(e.clientX, e.clientY);
+
+        // Tahan Shift + klik kiri (tambah) atau klik kanan (unactive)
+        if (e.shiftKey && (e.button === 0 || e.button === 2)) {
+          isShiftDragging = true;
+          shiftAction = e.button === 2 ? 'unselect' : 'select';
+          shiftVisitedKeys.clear();
+
+          if (tile && applyShiftTile(tile, shiftAction)) {
+            updateHUD();
+            scheduleRender();
+          }
+          return;
+        }
+
+        // Klik kiri normal tanpa Shift
+        if (e.button === 0 && !e.shiftKey) {
+          if (!tile) return;
+          const key = tileKey(tile.x, tile.y);
+          const alreadyOnlySelected = activeTiles.size === 1 && activeTiles.has(key);
+
+          activeTiles.clear();
+          if (!alreadyOnlySelected) {
+            activeTiles.set(key, { x: tile.x, y: tile.y, level: getLevel(tile.x, tile.y) });
+          }
+          updateHUD();
+          scheduleRender();
+        }
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        const nextHover = getCanvasTile(e.clientX, e.clientY);
+        const hoverChanged = !isSameTile(nextHover, hoveredTile);
+
+        let selectionChanged = false;
+        const holdingExpectedButton =
+          (shiftAction === 'select' && (e.buttons & 1) === 1) ||
+          (shiftAction === 'unselect' && (e.buttons & 2) === 2);
+
+        if (isShiftDragging && e.shiftKey && holdingExpectedButton && nextHover) {
+          selectionChanged = applyShiftTile(nextHover, shiftAction);
+        } else if (isShiftDragging && (!e.shiftKey || !holdingExpectedButton)) {
+          isShiftDragging = false;
+          shiftVisitedKeys.clear();
+        }
+
+        if (hoverChanged) {
+          hoveredTile = nextHover;
+          canvas.style.cursor = hoveredTile ? 'pointer' : 'crosshair';
+        }
+
+        if (hoverChanged || selectionChanged) {
+          updateHUD();
+          scheduleRender();
+        }
+      });
+
+      window.addEventListener('mouseup', () => {
+        isShiftDragging = false;
+        shiftVisitedKeys.clear();
+      });
+
+      window.addEventListener('keyup', (e) => {
+        if (e.key === 'Shift') {
+          isShiftDragging = false;
+          shiftVisitedKeys.clear();
+        }
+      });
+
+      window.addEventListener('keydown', (e) => {
+        if (activeTiles.size === 0) return;
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+
+        const delta = e.key === 'ArrowUp' ? 1 : -1;
+        let changed = false;
+
+        for (const t of activeTiles.values()) {
+          const current = getLevel(t.x, t.y);
+          const next = Math.max(0, current + delta);
+          if (next !== current) {
+            setLevel(t.x, t.y, next);
+            changed = true;
+          }
+        }
+
+        if (changed) {
+          updateHUD();
+          scheduleRender();
+        }
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        if (!hoveredTile) return;
+        hoveredTile = null;
+        canvas.style.cursor = 'crosshair';
+        updateHUD();
+        scheduleRender();
+      });
+
+      window.addEventListener('resize', resizeCanvas);
+      resizeCanvas();
+      updateHUD();
+    })();
+  </script>
+</body>
+</html>
