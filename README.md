@@ -52,3 +52,13 @@ npm test
 ```
 
 Pengujian menggunakan test runner bawaan Node.js.
+
+## Object model — Level 3.1–3.2
+
+- `WorldObject` disimpan terpisah dari `Tile` dan memiliki anchor grid serta footprint.
+- Footprint berbentuk persegi panjang dalam satuan tile: `width` mengikuti sumbu grid X dan `height` mengikuti sumbu grid Y.
+- Anchor adalah koordinat awal/minimum `(x, y)`; cakupan objek memanjang ke arah koordinat positif.
+- `ObjectFootprint.getGridCells(x, y)` menghasilkan semua koordinat tile yang dicakup dalam urutan diagonal grid.
+- `ObjectFootprint.fitsWithinWorld(width, height, x, y)` memvalidasi agar seluruh footprint berada di dalam batas dunia.
+- `ObjectFootprint.getCoveredTiles(world, x, y)` mengembalikan referensi tile persisten, atau `null` jika footprint keluar dari batas dunia.
+- Footprint belum melakukan placement, deteksi tumpang tindih, collision, elevation integration, atau sprite rendering; itu ditangani tahap berikutnya.
