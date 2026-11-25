@@ -29,6 +29,21 @@ export class TileInspector {
 
     this.terrainInput = this.requireElement('[data-input="terrain"]');
     this.walkableInput = this.requireElement('[data-input="walkable"]');
+    this.identityToggle = this.requireElement(
+  '[data-inspector-toggle="identity"]'
+);
+
+this.identityBody = this.requireElement(
+  '[data-inspector-body="identity"]'
+);
+
+this.propertiesToggle = this.requireElement(
+  '[data-inspector-toggle="properties"]'
+);
+
+this.propertiesBody = this.requireElement(
+  '[data-inspector-body="properties"]'
+);
 
     this.onElevationDecrease = () => {
       this.adjustElevation(-1);
@@ -50,11 +65,28 @@ export class TileInspector {
     this.elevationIncrease.addEventListener("click", this.onElevationIncrease);
     this.terrainInput.addEventListener("change", this.onTerrainChange);
     this.walkableInput.addEventListener("change", this.onWalkableChange);
+this.onIdentityToggle = () => {
+  this.toggleSection(this.identityToggle, this.identityBody);
+};
 
+this.onPropertiesToggle = () => {
+  this.toggleSection(this.propertiesToggle, this.propertiesBody);
+};
+
+this.identityToggle.addEventListener(
+  "click",
+  this.onIdentityToggle
+);
+
+this.propertiesToggle.addEventListener(
+  "click",
+  this.onPropertiesToggle
+);
     this.setTile(null);
   }
 
   requireElement(selector) {
+    
     const element = this.root.querySelector(selector);
 
     if (!element) {
@@ -63,7 +95,14 @@ export class TileInspector {
 
     return element;
   }
+  toggleSection(toggle, body) {
+    if (this.destroyed) return;
 
+    const expanded = toggle.getAttribute("aria-expanded") === "true";
+
+    toggle.setAttribute("aria-expanded", String(!expanded));
+    body.hidden = expanded;
+  }
   /** Updates the panel to show a persistent tile reference, or its empty state. */
   setTile(tile) {
     if (this.destroyed) return;
@@ -146,5 +185,14 @@ export class TileInspector {
 
     this.currentTile = null;
     this.destroyed = true;
+    this.identityToggle.removeEventListener(
+  "click",
+  this.onIdentityToggle
+);
+
+this.propertiesToggle.removeEventListener(
+  "click",
+  this.onPropertiesToggle
+);
   }
 }

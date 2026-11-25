@@ -12,7 +12,6 @@
   <aside id="tile-inspector" class="tile-inspector" aria-labelledby="tile-inspector-title">
     <header class="tile-inspector__header">
       <div>
-        <p class="tile-inspector__eyebrow">WORLD TOOLS / LEVEL 2</p>
         <h1 id="tile-inspector-title">Tile Inspector</h1>
       </div>
       <span class="tile-inspector__status" data-inspector-status aria-live="polite">NO TILE SELECTED</span>
@@ -24,7 +23,43 @@
       <p>Klik salah satu diamond pada grid untuk melihat dan mengedit datanya.</p>
     </div>
 
-    <section class="tile-inspector__content" data-inspector-content hidden aria-label="Selected tile properties">
+    <section
+  class="tile-inspector__content"
+  data-inspector-content
+  hidden
+  aria-label="Selected tile properties"
+>
+  <div class="tile-inspector__group-heading">TILE</div>
+
+  <section class="tile-inspector__section" aria-label="Tile identity">
+    <button
+      class="tile-inspector__section-toggle"
+      type="button"
+      data-inspector-toggle="identity"
+      aria-expanded="false"
+      aria-controls="tile-identity-body"
+    >
+      <span class="tile-inspector__section-label">
+        <svg
+          class="tile-inspector__section-chevron"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.4"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+        <span>IDENTITY</span>
+      </span>
+    </button>
+
+    <div
+      class="tile-inspector__section-body"
+      id="tile-identity-body"
+      data-inspector-body="identity"
+      hidden
+    >
       <div class="tile-inspector__identity">
         <span class="tile-inspector__field-label">TILE ID</span>
         <strong data-value="id">—</strong>
@@ -34,7 +69,38 @@
         <span class="tile-inspector__field-label">GRID COORDINATES</span>
         <strong data-value="coordinates">—</strong>
       </div>
+    </div>
+  </section>
 
+  <section class="tile-inspector__section" aria-label="Tile properties">
+    <button
+      class="tile-inspector__section-toggle"
+      type="button"
+      data-inspector-toggle="properties"
+      aria-expanded="false"
+      aria-controls="tile-properties-body"
+    >
+      <span class="tile-inspector__section-label">
+        <svg
+          class="tile-inspector__section-chevron"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.4"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+        <span>PROPERTIES</span>
+      </span>
+    </button>
+
+    <div
+      class="tile-inspector__section-body"
+      id="tile-properties-body"
+      data-inspector-body="properties"
+      hidden
+    >
       <div class="tile-inspector__field tile-inspector__elevation">
         <span>
           <strong>Elevation</strong>
@@ -71,7 +137,13 @@
           <strong>Terrain</strong>
           <small>Identitas permukaan tile</small>
         </span>
-        <input data-input="terrain" type="text" maxlength="64" required disabled>
+        <input
+          data-input="terrain"
+          type="text"
+          maxlength="64"
+          required
+          disabled
+        >
       </label>
 
       <label class="tile-inspector__toggle">
@@ -79,11 +151,15 @@
           <strong>Walkable</strong>
           <small>Tile dapat dilalui</small>
         </span>
-        <input data-input="walkable" type="checkbox" disabled>
+        <input
+          data-input="walkable"
+          type="checkbox"
+          disabled
+        >
       </label>
-
-      <p class="tile-inspector__footnote">Perubahan diterapkan langsung ke data tile.</p>
-    </section>
+    </div>
+  </section>
+</section>
   </aside>
 
   <script type="module" src="./src/main.js"></script>

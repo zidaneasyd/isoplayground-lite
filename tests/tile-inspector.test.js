@@ -11,6 +11,7 @@ class MockElement {
     this.disabled = false;
     this.hidden = false;
     this.listeners = new Map();
+    this.attributes = new Map();
   }
 
   addEventListener(type, listener) {
@@ -25,6 +26,14 @@ class MockElement {
     this.listeners.get(type)?.delete(listener);
   }
 
+  setAttribute(name, value) {
+    this.attributes.set(name, String(value));
+  }
+
+  getAttribute(name) {
+    return this.attributes.get(name) ?? null;
+  }
+
   dispatch(type) {
     for (const listener of this.listeners.get(type) ?? []) {
       listener({ target: this });
@@ -37,18 +46,38 @@ function makeInspectorRoot() {
     "[data-inspector-status]",
     "[data-inspector-empty]",
     "[data-inspector-content]",
+
     '[data-value="id"]',
     '[data-value="coordinates"]',
+
     '[data-input="elevation"]',
     "[data-elevation-decrease]",
     "[data-elevation-increase]",
+
     '[data-input="terrain"]',
-    '[data-input="walkable"]'
+    '[data-input="walkable"]',
+
+    '[data-inspector-toggle="identity"]',
+    '[data-inspector-body="identity"]',
+
+    '[data-inspector-toggle="properties"]',
+    '[data-inspector-body="properties"]'
   ];
 
   const elements = new Map(
     selectors.map((selector) => [selector, new MockElement()])
   );
+
+  elements
+    .get('[data-inspector-toggle="identity"]')
+    .setAttribute("aria-expanded", "false");
+
+  elements
+    .get('[data-inspector-toggle="properties"]')
+    .setAttribute("aria-expanded", "false");
+
+  elements.get('[data-inspector-body="identity"]').hidden = true;
+  elements.get('[data-inspector-body="properties"]').hidden = true;
 
   return {
     elements,
@@ -65,8 +94,15 @@ test("inspector starts empty and disables all editing controls", () => {
     "NO TILE SELECTED"
   );
 
-  assert.equal(root.elements.get("[data-inspector-empty]").hidden, false);
-  assert.equal(root.elements.get("[data-inspector-content]").hidden, true);
+  assert.equal(
+    root.elements.get("[data-inspector-empty]").hidden,
+    false
+  );
+
+  assert.equal(
+    root.elements.get("[data-inspector-content]").hidden,
+    true
+  );
 
   for (const selector of [
     "[data-elevation-decrease]",
@@ -80,11 +116,102 @@ test("inspector starts empty and disables all editing controls", () => {
   inspector.destroy();
 });
 
+test("inspector foldable sections start collapsed", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+
+  for (const name of ["identity", "properties"]) {
+    const toggle = root.elements.get(
+      `[data-inspector-toggle="${name}"]`
+    );
+
+    const body = root.elements.get(
+      `[data-inspector-body="${name}"]`
+    );
+
+    assert.equal(toggle.getAttribute("aria-expanded"), "false");
+    assert.equal(body.hidden, true);
+  }
+
+  inspector.destroy();
+});
+
+test("inspector sections expand and collapse independently", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+
+  const identityToggle = root.elements.get(
+    '[data-inspector-toggle="identity"]'
+  );
+
+  const identityBody = root.elements.get(
+    '[data-inspector-body="identity"]'
+  );
+
+  const propertiesToggle = root.elements.get(
+    '[data-inspector-toggle="properties"]'
+  );
+
+  const propertiesBody = root.elements.get(
+    '[data-inspector-body="properties"]'
+  );
+
+  identityToggle.dispatch("click");
+
+  assert.equal(
+    identityToggle.getAttribute("aria-expanded"),
+    "true"
+  );
+
+  assert.equal(identityBody.hidden, false);
+
+  assert.equal(
+    propertiesToggle.getAttribute("aria-expanded"),
+    "false"
+  );
+
+  assert.equal(propertiesBody.hidden, true);
+
+  propertiesToggle.dispatch("click");
+
+  assert.equal(
+    propertiesToggle.getAttribute("aria-expanded"),
+    "true"
+  );
+
+  assert.equal(propertiesBody.hidden, false);
+
+  assert.equal(identityBody.hidden, false);
+
+  identityToggle.dispatch("click");
+
+  assert.equal(
+    identityToggle.getAttribute("aria-expanded"),
+    "false"
+  );
+
+  assert.equal(identityBody.hidden, true);
+
+  assert.equal(propertiesBody.hidden, false);
+
+  propertiesToggle.dispatch("click");
+
+  assert.equal(
+    propertiesToggle.getAttribute("aria-expanded"),
+    "false"
+  );
+
+  assert.equal(propertiesBody.hidden, true);
+
+  inspector.destroy();
+});
+
 test("inspector displays selected tile identity and properties", () => {
   const root = makeInspectorRoot();
   const inspector = new TileInspector(root);
 
   const tile = new World({ width: 2, height: 2 }).getTile(1, 0);
+
   tile.elevation = 2.5;
   tile.terrain = "stone";
   tile.walkable = false;
@@ -96,8 +223,15 @@ test("inspector displays selected tile identity and properties", () => {
     "TILE SELECTED"
   );
 
-  assert.equal(root.elements.get("[data-inspector-empty]").hidden, true);
-  assert.equal(root.elements.get("[data-inspector-content]").hidden, false);
+  assert.equal(
+    root.elements.get("[data-inspector-empty]").hidden,
+    true
+  );
+
+  assert.equal(
+    root.elements.get("[data-inspector-content]").hidden,
+    false
+  );
 
   assert.equal(
     root.elements.get('[data-value="id"]').textContent,
@@ -124,8 +258,15 @@ test("inspector displays selected tile identity and properties", () => {
     false
   );
 
-  assert.equal(root.elements.get("[data-elevation-decrease]").disabled, false);
-  assert.equal(root.elements.get("[data-elevation-increase]").disabled, false);
+  assert.equal(
+    root.elements.get("[data-elevation-decrease]").disabled,
+    false
+  );
+
+  assert.equal(
+    root.elements.get("[data-elevation-increase]").disabled,
+    false
+  );
 
   inspector.destroy();
 });
@@ -137,10 +278,16 @@ test("plus button increases elevation by one unit", () => {
 
   inspector.setTile(tile);
 
-  root.elements.get("[data-elevation-increase]").dispatch("click");
+  root.elements
+    .get("[data-elevation-increase]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, 1);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "1");
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "1"
+  );
 
   inspector.destroy();
 });
@@ -151,12 +298,19 @@ test("minus button decreases elevation by one unit", () => {
   const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
 
   tile.elevation = 3;
+
   inspector.setTile(tile);
 
-  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  root.elements
+    .get("[data-elevation-decrease]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, 2);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "2");
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "2"
+  );
 
   inspector.destroy();
 });
@@ -168,15 +322,27 @@ test("elevation controls support negative values", () => {
 
   inspector.setTile(tile);
 
-  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  root.elements
+    .get("[data-elevation-decrease]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, -1);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "-1");
 
-  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "-1"
+  );
+
+  root.elements
+    .get("[data-elevation-decrease]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, -2);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "-2");
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "-2"
+  );
 
   inspector.destroy();
 });
@@ -187,17 +353,30 @@ test("elevation controls preserve decimal values", () => {
   const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
 
   tile.elevation = 1.5;
+
   inspector.setTile(tile);
 
-  root.elements.get("[data-elevation-increase]").dispatch("click");
+  root.elements
+    .get("[data-elevation-increase]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, 2.5);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "2.5");
 
-  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "2.5"
+  );
+
+  root.elements
+    .get("[data-elevation-decrease]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, 1.5);
-  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "1.5");
+
+  assert.equal(
+    root.elements.get('[data-input="elevation"]').textContent,
+    "1.5"
+  );
 
   inspector.destroy();
 });
@@ -213,9 +392,11 @@ test("inspector edits terrain and walkable and reports model changes", () => {
   });
 
   const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
   inspector.setTile(tile);
 
   const terrain = root.elements.get('[data-input="terrain"]');
+
   terrain.value = "water";
   terrain.dispatch("change");
 
@@ -223,6 +404,7 @@ test("inspector edits terrain and walkable and reports model changes", () => {
   assert.equal(terrain.value, "water");
 
   const walkable = root.elements.get('[data-input="walkable"]');
+
   walkable.checked = false;
   walkable.dispatch("change");
 
@@ -247,10 +429,16 @@ test("elevation button changes report model updates", () => {
   });
 
   const tile = new World({ width: 1, height: 1 }).getTile(0, 0);
+
   inspector.setTile(tile);
 
-  root.elements.get("[data-elevation-increase]").dispatch("click");
-  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  root.elements
+    .get("[data-elevation-increase]")
+    .dispatch("click");
+
+  root.elements
+    .get("[data-elevation-decrease]")
+    .dispatch("click");
 
   assert.equal(tile.elevation, 0);
 
@@ -321,16 +509,22 @@ test("inspector detaches all listeners on destroy", () => {
   inspector.setTile(tile);
   inspector.destroy();
 
-  for (const selector of [
-    "[data-elevation-decrease]",
-    "[data-elevation-increase]",
-    '[data-input="terrain"]',
-    '[data-input="walkable"]'
-  ]) {
-    const element = root.elements.get(selector);
-    const event = selector.includes("elevation") ? "click" : "change";
+  const listeners = [
+    ["[data-elevation-decrease]", "click"],
+    ["[data-elevation-increase]", "click"],
+    ['[data-input="terrain"]', "change"],
+    ['[data-input="walkable"]', "change"],
+    ['[data-inspector-toggle="identity"]', "click"],
+    ['[data-inspector-toggle="properties"]', "click"]
+  ];
 
-    assert.equal(element.listeners.get(event)?.size ?? 0, 0);
+  for (const [selector, event] of listeners) {
+    const element = root.elements.get(selector);
+
+    assert.equal(
+      element.listeners.get(event)?.size ?? 0,
+      0
+    );
   }
 });
 
@@ -342,24 +536,49 @@ test("inspector ignores button interactions after destroy", () => {
   inspector.setTile(tile);
   inspector.destroy();
 
-  root.elements.get("[data-elevation-increase]").dispatch("click");
+  root.elements
+    .get("[data-elevation-increase]")
+    .dispatch("click");
+
+  root.elements
+    .get('[data-inspector-toggle="identity"]')
+    .dispatch("click");
 
   assert.equal(tile.elevation, 0);
   assert.equal(inspector.currentTile, null);
+
+  assert.equal(
+    root.elements
+      .get('[data-inspector-toggle="identity"]')
+      .getAttribute("aria-expanded"),
+    "false"
+  );
+
+  assert.equal(
+    root.elements.get('[data-inspector-body="identity"]').hidden,
+    true
+  );
 });
 
 test("inspector validates root and change callback", () => {
-  assert.throws(() => new TileInspector(null), TypeError);
+  assert.throws(
+    () => new TileInspector(null),
+    TypeError
+  );
 
   assert.throws(
-    () => new TileInspector(makeInspectorRoot(), { onTileChange: true }),
+    () => new TileInspector(makeInspectorRoot(), {
+      onTileChange: true
+    }),
     TypeError
   );
 });
 
 test("inspector rejects incomplete markup", () => {
   assert.throws(
-    () => new TileInspector({ querySelector: () => null }),
+    () => new TileInspector({
+      querySelector: () => null
+    }),
     /Elemen Tile Inspector tidak ditemukan/
   );
 });
@@ -368,7 +587,10 @@ test("inspector safely ignores updates without selected tile", () => {
   const inspector = new TileInspector(makeInspectorRoot());
 
   assert.equal(inspector.adjustElevation(1), false);
-  assert.equal(inspector.updateTileProperty("elevation", 4), false);
+  assert.equal(
+    inspector.updateTileProperty("elevation", 4),
+    false
+  );
 
   inspector.destroy();
   inspector.destroy();
