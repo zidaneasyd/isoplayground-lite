@@ -523,3 +523,55 @@ test("equal elevation neighbors do not create a shared vertical wall", () => {
     ["Z"]
   ]);
 });
+
+test("renderer draws a valid object placement preview over every covered tile", () => {
+  const { ctx, fillRecords, strokeRecords } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 4, height: 4 });
+
+  renderer.render(world, new Camera(CONFIG.camera), {
+    objectPlacementPreview: {
+      valid: true,
+      cells: [
+        { x: 1, y: 1 },
+        { x: 2, y: 1 },
+        { x: 1, y: 2 },
+        { x: 2, y: 2 }
+      ]
+    }
+  });
+
+  assert.equal(fillRecords.length, world.width * world.height + 4);
+  assert.equal(strokeRecords.length, world.width * world.height + 4);
+  assert.ok(fillRecords.slice(-4).every((record) => {
+    return record.style === "rgba(52, 120, 246, 0.18)";
+  }));
+  assert.ok(strokeRecords.slice(-4).every((record) => {
+    return record.style === "#3478f6" && record.width === 2 / 1;
+  }));
+  for (const record of strokeRecords.slice(-4)) assertDiamondPath(record);
+});
+
+test("renderer marks an invalid object placement preview with warning styling", () => {
+  const { ctx, fillRecords, strokeRecords } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 4, height: 4 });
+
+  renderer.render(world, new Camera(CONFIG.camera), {
+    objectPlacementPreview: {
+      valid: false,
+      cells: [
+        { x: 3, y: 3 },
+        { x: 4, y: 3 }
+      ]
+    }
+  });
+
+  assert.equal(fillRecords.length, world.width * world.height + 1);
+  assert.equal(strokeRecords.length, world.width * world.height + 1);
+  assert.equal(fillRecords.at(-1).style, "rgba(224, 76, 76, 0.18)");
+  assert.equal(strokeRecords.at(-1).style, "#e04c4c");
+  assertDiamondPath(strokeRecords.at(-1));
+});

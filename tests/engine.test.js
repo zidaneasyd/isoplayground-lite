@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { Engine } from "../src/core/engine.js";
 import { CONFIG } from "../src/core/config.js";
 import { gridToScreen, getWorldCenter } from "../src/world/coordinates.js";
+import { WorldObject } from "../src/objects/world-object.js";
 
 function makeCanvas() {
   const listeners = new Map();
@@ -735,6 +736,260 @@ test("engine replaces selection normally and processes each tile crossed by addi
     let prevented = false;
     listeners.get("contextmenu")({ preventDefault: () => { prevented = true; } });
     assert.equal(prevented, true);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+// --------------------------------------------------
+// OBJECT PLACEMENT AND MOVEMENT
+// --------------------------------------------------
+
+function createWorldObject(id, x = 0, y = 0, width = 1, height = 1) {
+  return new WorldObject({
+    id,
+    type: "prop",
+    x,
+    y,
+    footprint: { width, height }
+  });
+}
+
+test("engine previews and commits a new object from a canvas click without selecting a tile", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const object = createWorldObject("pool-1", 0, 0, 5, 7);
+    const tile = engine.world.getTile(2, 1);
+    const point = getTileClientCenter(engine, canvas, tile);
+
+    assert.equal(engine.beginObjectPlacement(object), true);
+    assert.equal(engine.world.objects.size, 0);
+
+    listeners.get("pointermove")({ pointerId: 51, ...point });
+    assert.equal(engine.getObjectPlacementPreview().x, 2);
+    assert.equal(engine.getObjectPlacementPreview().y, 1);
+    assert.equal(engine.getObjectPlacementPreview().valid, true);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 51, ...point });
+    listeners.get("pointerup")({ pointerId: 51, type: "pointerup", ...point });
+
+    assert.equal(engine.world.objects.getById("pool-1"), object);
+    assert.equal(object.x, 2);
+    assert.equal(object.y, 1);
+    assert.equal(engine.world.objects.size, 1);
+    assert.equal(engine.objectPlacement.active, false);
+    assert.equal(engine.getObjectPlacementPreview(), null);
+    assert.equal(engine.getSelectedTile(), null, "placement must not alter tile selection");
+
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine keeps an invalid placement active and commits after moving to a valid footprint anchor", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const object = createWorldObject("large-prop", 0, 0, 2, 2);
+    const edgePoint = getTileClientCenter(engine, canvas, engine.world.getTile(11, 11));
+    engine.beginObjectPlacement(object);
+
+    listeners.get("pointermove")({ pointerId: 52, ...edgePoint });
+    assert.equal(engine.getObjectPlacementPreview().valid, false);
+    listeners.get("pointerdown")({ button: 0, pointerId: 52, ...edgePoint });
+    listeners.get("pointerup")({ pointerId: 52, type: "pointerup", ...edgePoint });
+    assert.equal(engine.objectPlacement.active, true);
+    assert.equal(engine.world.objects.size, 0);
+
+    const validPoint = getTileClientCenter(engine, canvas, engine.world.getTile(4, 4));
+    listeners.get("pointermove")({ pointerId: 53, ...validPoint });
+    assert.equal(engine.getObjectPlacementPreview().valid, true);
+    listeners.get("pointerdown")({ button: 0, pointerId: 53, ...validPoint });
+    listeners.get("pointerup")({ pointerId: 53, type: "pointerup", ...validPoint });
+
+    assert.equal(engine.world.objects.getById("large-prop"), object);
+    assert.equal(object.x, 4);
+    assert.equal(object.y, 4);
+    assert.equal(engine.objectPlacement.active, false);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine moves a stored object only when the preview anchor is confirmed", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const object = createWorldObject("prop-1", 1, 1, 2, 2);
+    engine.world.objects.add(object);
+    assert.equal(engine.beginObjectMove(object.id), true);
+
+    const target = getTileClientCenter(engine, canvas, engine.world.getTile(5, 3));
+    listeners.get("pointermove")({ pointerId: 54, ...target });
+    assert.equal(engine.getObjectPlacementPreview().x, 5);
+    assert.equal(engine.getObjectPlacementPreview().y, 3);
+    assert.equal(object.x, 1);
+    assert.equal(object.y, 1);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 54, ...target });
+    listeners.get("pointerup")({ pointerId: 54, type: "pointerup", ...target });
+
+    assert.equal(object.x, 5);
+    assert.equal(object.y, 3);
+    assert.equal(engine.world.objects.getById(object.id), object);
+    assert.equal(engine.world.objects.size, 1);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine cancels object placement with Escape and right click", () => {
+  const originalWindow = globalThis.window;
+  const windowListeners = new Map();
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: (name, fn) => windowListeners.set(name, fn),
+    removeEventListener: (name) => windowListeners.delete(name)
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    engine.beginObjectPlacement(createWorldObject("prop-escape"));
+    let prevented = false;
+    windowListeners.get("keydown")({
+      key: "Escape",
+      target: null,
+      preventDefault() { prevented = true; }
+    });
+    assert.equal(prevented, true);
+    assert.equal(engine.objectPlacement.active, false);
+
+    engine.beginObjectPlacement(createWorldObject("prop-right-click"));
+    listeners.get("pointerdown")({
+      button: 2,
+      pointerId: 55,
+      clientX: 100,
+      clientY: 120,
+      preventDefault() {}
+    });
+    assert.equal(engine.objectPlacement.active, false);
+    assert.equal(engine.world.objects.size, 0);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine preserves an active object preview when pointer gestures are cancelled", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const object = createWorldObject("prop-1");
+    const point = getTileClientCenter(engine, canvas, engine.world.getTile(4, 4));
+    engine.beginObjectPlacement(object);
+    listeners.get("pointerdown")({ button: 0, pointerId: 56, ...point });
+    listeners.get("pointercancel")({ pointerId: 56, type: "pointercancel" });
+
+    assert.equal(engine.objectPlacement.active, true);
+    assert.equal(engine.world.objects.size, 0);
+    assert.equal(engine.getObjectPlacementPreview().valid, false);
+    assert.equal(engine.getObjectPlacementPreview().reason, "no-target");
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine keeps placement preview aligned with hover during camera pan and zoom", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    engine.beginObjectPlacement(createWorldObject("prop-1", 0, 0, 2, 2));
+
+    const initialPoint = getTileClientCenter(engine, canvas, engine.world.getTile(5, 5));
+    listeners.get("pointermove")({ pointerId: 57, ...initialPoint });
+    assert.deepEqual(
+      { x: engine.getObjectPlacementPreview().x, y: engine.getObjectPlacementPreview().y },
+      { x: engine.getHoveredTile().x, y: engine.getHoveredTile().y }
+    );
+
+    listeners.get("pointerdown")({
+      button: 1,
+      pointerId: 58,
+      clientX: initialPoint.clientX,
+      clientY: initialPoint.clientY
+    });
+    const movedPoint = {
+      clientX: initialPoint.clientX + 16,
+      clientY: initialPoint.clientY + 10
+    };
+    listeners.get("pointermove")({ pointerId: 58, ...movedPoint });
+    listeners.get("pointerup")({ pointerId: 58, type: "pointerup", ...movedPoint });
+
+    assert.deepEqual(
+      { x: engine.getObjectPlacementPreview().x, y: engine.getObjectPlacementPreview().y },
+      { x: engine.getHoveredTile().x, y: engine.getHoveredTile().y }
+    );
+
+    listeners.get("wheel")({
+      deltaY: -180,
+      clientX: movedPoint.clientX,
+      clientY: movedPoint.clientY,
+      preventDefault() {}
+    });
+    assert.deepEqual(
+      { x: engine.getObjectPlacementPreview().x, y: engine.getObjectPlacementPreview().y },
+      { x: engine.getHoveredTile().x, y: engine.getHoveredTile().y }
+    );
+
+    engine.cancelObjectPlacement();
     engine.destroy();
   } finally {
     if (originalWindow === undefined) delete globalThis.window;

@@ -5,6 +5,7 @@ import { Renderer } from "../rendering/renderer.js";
 import { screenToGrid, screenToTile } from "../world/coordinates.js";
 import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
+import { ObjectPlacement } from "../interaction/object-placement.js";
 import { updateTilesProperty } from "../world/tile-properties.js";
 
 const INTERACTIVE_ROLES = new Set([
@@ -72,6 +73,7 @@ export class Engine {
     this.renderer = new Renderer(this.ctx, config);
     this.tileHover = new TileHover();
     this.tileSelection = new TileSelection();
+    this.objectPlacement = new ObjectPlacement(this.world);
     this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
@@ -185,13 +187,81 @@ export class Engine {
   updateHoverAtClientPoint(clientX, clientY) {
     this.lastPointerClientPosition = { x: clientX, y: clientY };
     const point = this.clientToCanvas(clientX, clientY);
-    if (!point) return this.tileHover.clear();
-    return this.tileHover.update(point.x, point.y, this.getView());
+    const hoverChanged = point
+      ? this.tileHover.update(point.x, point.y, this.getView())
+      : this.tileHover.clear();
+    return this.updateObjectPlacementPreviewFromHover() || hoverChanged;
   }
 
   clearHover() {
     this.lastPointerClientPosition = null;
-    return this.tileHover.clear();
+    const hoverChanged = this.tileHover.clear();
+    return this.updateObjectPlacementPreviewFromHover() || hoverChanged;
+  }
+
+  /** Updates the placement candidate from the tile currently under the pointer. */
+  updateObjectPlacementPreviewFromHover() {
+    if (!this.objectPlacement.active) return false;
+    const tile = this.tileHover.hoveredTile;
+    const previous = this.objectPlacement.getPreview();
+    this.objectPlacement.updatePreview(tile?.x ?? null, tile?.y ?? null);
+    const next = this.objectPlacement.getPreview();
+    return (
+      previous.mode !== next.mode ||
+      previous.objectId !== next.objectId ||
+      previous.x !== next.x ||
+      previous.y !== next.y ||
+      previous.valid !== next.valid ||
+      previous.reason !== next.reason
+    );
+  }
+
+  /** Starts a new-object placement session. The object is stored only on commit. */
+  beginObjectPlacement(object) {
+    if (this.destroyed) return false;
+    this.objectPlacement.beginPlacement(object);
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    } else {
+      this.objectPlacement.updatePreview(null, null);
+    }
+    this.render();
+    return true;
+  }
+
+  /** Starts moving a stored object by ID. */
+  beginObjectMove(id) {
+    if (this.destroyed || !this.objectPlacement.beginMove(id)) return false;
+    if (this.lastPointerClientPosition) {
+      this.updateHoverAtClientPoint(
+        this.lastPointerClientPosition.x,
+        this.lastPointerClientPosition.y
+      );
+    }
+    this.render();
+    return true;
+  }
+
+  /** Cancels the active placement/move and removes its preview. */
+  cancelObjectPlacement() {
+    const cancelled = this.objectPlacement.cancel();
+    if (cancelled) this.render();
+    return cancelled;
+  }
+
+  /** Commits the current valid preview, or returns false while it is invalid. */
+  confirmObjectPlacement() {
+    const object = this.objectPlacement.confirm();
+    if (object) this.refreshWorldView();
+    else if (this.objectPlacement.active) this.render();
+    return object;
+  }
+
+  getObjectPlacementPreview() {
+    return this.objectPlacement.getPreview();
   }
 
   /** Koordinat grid kontinu di bawah pointer, atau null bila di luar Canvas. */
@@ -234,11 +304,20 @@ export class Engine {
 
   onPointerDown(event) {
     if (this.pointerSession || ![0, 1, 2].includes(event.button) || !Number.isFinite(event.pointerId)) return;
-    const pan = event.button === 1;
     if (event.button === 0 && event.isPrimary === false) return;
-    const mode = pan ? "pan" : event.button === 0
-      ? (event.shiftKey ? "add" : "select")
-      : (event.shiftKey ? "remove" : null);
+
+    if (this.objectPlacement.active && event.button === 2) {
+      event.preventDefault?.();
+      this.cancelObjectPlacement();
+      return;
+    }
+
+    const pan = event.button === 1;
+    const mode = pan ? "pan" : this.objectPlacement.active && event.button === 0
+      ? "object-placement"
+      : event.button === 0
+        ? (event.shiftKey ? "add" : "select")
+        : (event.shiftKey ? "remove" : null);
     if (!mode) return;
 
     this.pointerSession = {
@@ -342,23 +421,27 @@ export class Engine {
       hoverChanged = this.clearHover();
     } else if (hasReleasePoint) {
       hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
-      if (session.mode === "select") {
+      if (session.mode === "select" || session.mode === "object-placement") {
         const scale = this.getCanvasClientScale();
         const dx = (event.clientX - session.downX) * scale.x;
         const dy = (event.clientY - session.downY) * scale.y;
         const clickDistance = Math.hypot(dx, dy);
-        // A small tolerance accommodates pointer jitter without treating a pan as a click.
+        // A small tolerance accommodates pointer jitter without treating a drag as a click.
         if (clickDistance <= 4) {
-          const tile = this.tileHover.hoveredTile;
-          if (tile) {
-            const focused = this.tileSelection.selectedTile;
-            if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
-              selectionChanged = this.tileSelection.clear();
-            } else {
-              selectionChanged = this.tileSelection.select(tile);
+          if (session.mode === "object-placement") {
+            this.confirmObjectPlacement();
+          } else {
+            const tile = this.tileHover.hoveredTile;
+            if (tile) {
+              const focused = this.tileSelection.selectedTile;
+              if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
+                selectionChanged = this.tileSelection.clear();
+              } else {
+                selectionChanged = this.tileSelection.select(tile);
+              }
             }
+            if (selectionChanged) this.notifySelectionChange();
           }
-          if (selectionChanged) this.notifySelectionChange();
         }
       }
     }
@@ -366,8 +449,13 @@ export class Engine {
   }
 
   onKeyDown(event) {
-    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     if (isInteractiveKeyTarget(event.target)) return;
+    if (event.key === "Escape" && this.objectPlacement.active) {
+      event.preventDefault();
+      this.cancelObjectPlacement();
+      return;
+    }
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
     const tiles = this.tileSelection.getSelectedTiles();
     if (!tiles.length) return;
     event.preventDefault();
@@ -422,7 +510,8 @@ export class Engine {
   render() {
     this.renderer.render(this.world, this.camera, {
       hoveredTileId: this.tileHover.hoveredTile?.id ?? null,
-      selectedTileIds: this.tileSelection.selectedTiles.map((tile) => tile.id)
+      selectedTileIds: this.tileSelection.selectedTiles.map((tile) => tile.id),
+      objectPlacementPreview: this.objectPlacement.getPreview()
     });
   }
 
@@ -451,6 +540,7 @@ export class Engine {
     window.removeEventListener("keydown", this.onKeyDown);
     this.canvas.classList?.remove("is-dragging");
     this.pointerSession = null;
+    this.objectPlacement.cancel();
     this.clearHover();
     if (this.tileSelection.clear()) this.notifySelectionChange();
   }

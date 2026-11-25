@@ -1,3 +1,4 @@
+import { ObjectStore } from "../objects/object-store.js";
 import { Grid } from "./grid.js";
 import { DEFAULT_TERRAIN, Tile } from "./tile.js";
 
@@ -24,6 +25,10 @@ export class World {
     this.height = height;
     this.baseElevation = baseElevation;
     this.grid = new Grid(width, height);
+    Object.defineProperty(this, "objects", {
+      value: new ObjectStore(),
+      enumerable: true
+    });
 
     for (const { x, y } of this.grid.tiles()) {
       const tile = new Tile({

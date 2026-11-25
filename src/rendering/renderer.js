@@ -108,7 +108,12 @@ export class Renderer {
   }
 }
 
-  render(world, camera, { hoveredTileId = null, selectedTileId = null, selectedTileIds = null } = {}) {
+  render(world, camera, {
+    hoveredTileId = null,
+    selectedTileId = null,
+    selectedTileIds = null,
+    objectPlacementPreview = null
+  } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
     const zoom = camera.zoom;
@@ -184,6 +189,29 @@ this.#traceTileDiamond(p, elevatedY, tileW, tileH);
       ctx.strokeStyle = config.colors.selectedOutline ?? "#d7c4ff";
       ctx.lineWidth = 2 / zoom;
       ctx.stroke();
+    }
+
+    if (objectPlacementPreview) {
+      const previewFill = objectPlacementPreview.valid
+        ? (config.colors.objectPlacementFill ?? "rgba(52, 120, 246, 0.18)")
+        : (config.colors.objectPlacementInvalidFill ?? "rgba(224, 76, 76, 0.18)");
+      const previewOutline = objectPlacementPreview.valid
+        ? (config.colors.objectPlacementOutline ?? "#3478f6")
+        : (config.colors.objectPlacementInvalidOutline ?? "#e04c4c");
+
+      for (const cell of objectPlacementPreview.cells ?? []) {
+        const tile = world.getTile(cell.x, cell.y);
+        if (!tile) continue;
+
+        const p = gridToScreen(cell.x, cell.y, tileW, tileH);
+        const elevatedY = p.y - tile.elevation * elevationStep;
+        this.#traceTileDiamond(p, elevatedY, tileW, tileH);
+        ctx.fillStyle = previewFill;
+        ctx.fill();
+        ctx.strokeStyle = previewOutline;
+        ctx.lineWidth = 2 / zoom;
+        ctx.stroke();
+      }
     }
 
     ctx.restore();
