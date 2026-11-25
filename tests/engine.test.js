@@ -4,6 +4,7 @@ import { Engine } from "../src/core/engine.js";
 import { CONFIG } from "../src/core/config.js";
 import { gridToScreen, getWorldCenter } from "../src/world/coordinates.js";
 import { WorldObject } from "../src/objects/world-object.js";
+import { AssetManager } from "../src/assets/asset-manager.js";
 
 function makeCanvas() {
   const listeners = new Map();
@@ -12,7 +13,7 @@ function makeCanvas() {
   const ctx = {};
   for (const method of [
     "setTransform", "clearRect", "fillRect", "save", "translate", "scale",
-    "beginPath", "moveTo", "lineTo", "closePath", "fill", "stroke", "restore"
+    "beginPath", "moveTo", "lineTo", "closePath", "fill", "stroke", "restore", "drawImage"
   ]) {
     ctx[method] = (...args) => calls.push([method, ...args]);
   }
@@ -990,6 +991,190 @@ test("engine keeps placement preview aligned with hover during camera pan and zo
     );
 
     engine.cancelObjectPlacement();
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine placement preview tracks live anchor elevation and keeps object offset separate", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const anchor = engine.world.getTile(4, 3);
+    anchor.elevation = 2;
+    // Keep the tile behind the anchor lower so the anchor remains the topmost
+    // visible diamond after its elevation is reduced.
+    engine.world.getTile(5, 4).elevation = -5;
+    const object = new WorldObject({
+      id: "elevated-object",
+      type: "prop",
+      x: 4,
+      y: 3,
+      elevationOffset: -0.5
+    });
+    engine.beginObjectPlacement(object);
+
+    const point = getTileClientCenter(engine, canvas, anchor);
+    listeners.get("pointermove")({ pointerId: 84, ...point });
+    assert.equal(engine.getObjectPlacementPreview().anchorElevation, 2);
+    assert.equal(engine.getObjectPlacementPreview().elevationOffset, -0.5);
+    assert.equal(engine.getObjectPlacementPreview().elevation, 1.5);
+
+    anchor.elevation = -3;
+    const adjustedPoint = getTileClientCenter(engine, canvas, anchor);
+    listeners.get("pointermove")({ pointerId: 84, ...adjustedPoint });
+    assert.equal(engine.getHoveredTile(), anchor);
+    assert.equal(engine.getObjectPlacementPreview().anchorElevation, -3);
+    assert.equal(engine.getObjectPlacementPreview().elevation, -3.5);
+    assert.equal(object.elevationOffset, -0.5);
+    assert.equal(anchor.elevation, -3);
+
+    engine.cancelObjectPlacement();
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+
+test("engine loads sprite assets, renders stored objects, and removes sprite registrations", async () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  class FakeImage {
+    constructor() {
+      this.naturalWidth = 40;
+      this.naturalHeight = 80;
+    }
+    set src(value) {
+      this._src = value;
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+
+  try {
+    const { canvas, calls } = makeCanvas();
+    const assetManager = new AssetManager({ ImageClass: FakeImage });
+    const engine = new Engine(canvas, CONFIG, { assetManager });
+    const object = new WorldObject({
+      id: "tree-1",
+      type: "tree",
+      assetId: "tree",
+      x: 2,
+      y: 3
+    });
+    engine.world.objects.add(object);
+
+    await engine.loadSprite("tree", "/sprites/tree.png");
+    assert.equal(engine.assets.getStatus("tree"), "loaded");
+    assert.equal(calls.filter(([name]) => name === "drawImage").length, 1);
+
+    assert.equal(engine.removeSprite("tree"), true);
+    assert.equal(calls.filter(([name]) => name === "drawImage").length, 1);
+    assert.equal(engine.removeSprite("tree"), false);
+
+    engine.destroy();
+    assert.equal(assetManager.size, 0);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine rejects an incomplete injected asset manager", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+  try {
+    const { canvas } = makeCanvas();
+    assert.throws(
+      () => new Engine(canvas, CONFIG, { assetManager: { get() {} } }),
+      /assetManager harus menyediakan/
+    );
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine selects objects by footprint before tiles and notifies the object inspector", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: () => {},
+    removeEventListener: () => {}
+  };
+
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const objectSelections = [];
+    const tileSelections = [];
+    const engine = new Engine(canvas, CONFIG, {
+      onObjectSelectionChange: (object) => objectSelections.push(object),
+      onSelectionChange: (_focused, tiles) => tileSelections.push(tiles)
+    });
+    const object = new WorldObject({
+      id: "pool-select", type: "pool", x: 4, y: 4,
+      footprint: { width: 2, height: 2 }
+    });
+    engine.world.objects.add(object);
+    const coveredTile = engine.world.getTile(5, 5);
+    const point = getTileClientCenter(engine, canvas, coveredTile);
+
+    listeners.get("pointerdown")({ button: 0, pointerId: 91, ...point });
+    listeners.get("pointerup")({ pointerId: 91, type: "pointerup", ...point });
+    assert.equal(engine.getSelectedObject(), object);
+    assert.equal(engine.getSelectedTile(), null);
+    assert.deepEqual(objectSelections, [object]);
+    assert.equal(tileSelections.length, 0);
+
+    const emptyObjectTile = engine.world.getTile(8, 8);
+    const emptyPoint = getTileClientCenter(engine, canvas, emptyObjectTile);
+    listeners.get("pointerdown")({ button: 0, pointerId: 92, ...emptyPoint });
+    listeners.get("pointerup")({ pointerId: 92, type: "pointerup", ...emptyPoint });
+    assert.equal(engine.getSelectedObject(), null);
+    assert.equal(engine.getSelectedTile(), emptyObjectTile);
+    assert.deepEqual(objectSelections, [object, null]);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine removes selected objects, clears inspector selection, and cleans up callbacks", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = { devicePixelRatio: 1, addEventListener: () => {}, removeEventListener: () => {} };
+  try {
+    const { canvas } = makeCanvas();
+    const changes = [];
+    const engine = new Engine(canvas, CONFIG, {
+      onObjectSelectionChange: (object) => changes.push(object)
+    });
+    const object = new WorldObject({ id: "remove-me", type: "prop", x: 1, y: 1 });
+    engine.world.objects.add(object);
+    engine.objectSelection.select(object.id);
+    assert.equal(engine.removeWorldObject(object.id), true);
+    assert.equal(engine.getSelectedObject(), null);
+    assert.equal(engine.removeWorldObject(object.id), false);
+    assert.deepEqual(changes, [null]);
     engine.destroy();
   } finally {
     if (originalWindow === undefined) delete globalThis.window;

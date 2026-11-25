@@ -85,8 +85,8 @@ function cloneProperties(value) {
  * Data model for an independent object anchored to a grid coordinate.
  * Object identity and type are immutable. Display metadata, asset reference,
  * grid anchor, and serializable custom properties are independent of Tile data.
- * Footprint defines the rectangular grid coverage; elevation behavior belongs
- * to a later object-system stage.
+ * Footprint defines rectangular grid coverage. Final elevation is resolved
+ * from the anchor tile plus the object's relative elevationOffset.
  */
 export class WorldObject {
   #name;
@@ -95,6 +95,7 @@ export class WorldObject {
   #y;
   #properties;
   #footprint;
+  #elevationOffset;
 
   constructor({
     id,
@@ -104,6 +105,7 @@ export class WorldObject {
     x,
     y,
     footprint = { width: 1, height: 1 },
+    elevationOffset = 0,
     properties = {}
   }) {
     validateNonEmptyString(id, "ID objek");
@@ -156,6 +158,16 @@ export class WorldObject {
           this.#footprint = new ObjectFootprint(dimensions);
         }
       },
+      elevationOffset: {
+        enumerable: true,
+        get: () => this.#elevationOffset,
+        set: (value) => {
+          if (!Number.isFinite(value)) {
+            throw new TypeError("Elevation offset objek harus berupa angka finite.");
+          }
+          this.#elevationOffset = value;
+        }
+      },
       properties: {
         enumerable: true,
         get: () => cloneProperties(this.#properties),
@@ -170,6 +182,7 @@ export class WorldObject {
     this.x = x;
     this.y = y;
     this.footprint = footprint;
+    this.elevationOffset = elevationOffset;
     this.properties = properties;
   }
 
@@ -183,6 +196,7 @@ export class WorldObject {
       x: this.x,
       y: this.y,
       footprint: this.footprint.toJSON(),
+      elevationOffset: this.elevationOffset,
       properties: this.properties
     };
   }

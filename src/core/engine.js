@@ -6,6 +6,8 @@ import { screenToGrid, screenToTile } from "../world/coordinates.js";
 import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
 import { ObjectPlacement } from "../interaction/object-placement.js";
+import { ObjectSelection } from "../interaction/object-selection.js";
+import { AssetManager } from "../assets/asset-manager.js";
 import { updateTilesProperty } from "../world/tile-properties.js";
 
 const INTERACTIVE_ROLES = new Set([
@@ -49,7 +51,7 @@ function isInteractiveKeyTarget(target) {
 }
 
 export class Engine {
-  constructor(canvas, config, { onSelectionChange = null, onElevationChange = null } = {}) {
+  constructor(canvas, config, { onSelectionChange = null, onElevationChange = null, onObjectSelectionChange = null, assetManager = null } = {}) {
     if (!canvas || typeof canvas.getContext !== "function") {
       throw new TypeError("Engine membutuhkan elemen canvas yang valid.");
     }
@@ -64,16 +66,30 @@ export class Engine {
     if (onElevationChange !== null && typeof onElevationChange !== "function") {
       throw new TypeError("onElevationChange harus berupa function atau null.");
     }
+    if (onObjectSelectionChange !== null && typeof onObjectSelectionChange !== "function") {
+      throw new TypeError("onObjectSelectionChange harus berupa function atau null.");
+    }
+    if (assetManager !== null && (
+      typeof assetManager.load !== "function" ||
+      typeof assetManager.get !== "function" ||
+      typeof assetManager.remove !== "function" ||
+      typeof assetManager.clear !== "function"
+    )) {
+      throw new TypeError("assetManager harus menyediakan load(), get(), remove(), dan clear().");
+    }
 
     this.config = config;
     this.onSelectionChange = onSelectionChange;
     this.onElevationChange = onElevationChange;
+    this.onObjectSelectionChange = onObjectSelectionChange;
+    this.assets = assetManager ?? new AssetManager();
     this.world = new World(config.world);
     this.camera = new Camera(config.camera);
-    this.renderer = new Renderer(this.ctx, config);
+    this.renderer = new Renderer(this.ctx, config, { assetManager: this.assets });
     this.tileHover = new TileHover();
     this.tileSelection = new TileSelection();
     this.objectPlacement = new ObjectPlacement(this.world);
+    this.objectSelection = new ObjectSelection(this.world);
     this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
@@ -183,6 +199,23 @@ export class Engine {
 
   getSelectedTiles() { return this.tileSelection.getSelectedTiles(); }
 
+  getSelectedObject() { return this.objectSelection.selectedObject; }
+
+  notifyObjectSelectionChange() {
+    this.onObjectSelectionChange?.(this.objectSelection.selectedObject);
+  }
+
+  removeWorldObject(id) {
+    const removed = this.world.objects.remove(id);
+    if (!removed) return false;
+    if (this.objectSelection.selectedObjectId === id) {
+      this.objectSelection.clear();
+      this.notifyObjectSelectionChange();
+    }
+    this.refreshWorldView();
+    return true;
+  }
+
   /** Updates hover using client coordinates and the current camera transform. */
   updateHoverAtClientPoint(clientX, clientY) {
     this.lastPointerClientPosition = { x: clientX, y: clientY };
@@ -255,13 +288,34 @@ export class Engine {
   /** Commits the current valid preview, or returns false while it is invalid. */
   confirmObjectPlacement() {
     const object = this.objectPlacement.confirm();
-    if (object) this.refreshWorldView();
+    if (object) {
+      if (this.objectSelection.select(object.id)) this.notifyObjectSelectionChange();
+      this.refreshWorldView();
+    }
     else if (this.objectPlacement.active) this.render();
     return object;
   }
 
   getObjectPlacementPreview() {
     return this.objectPlacement.getPreview();
+  }
+
+  /** Loads a sprite asset and redraws the world when the image is ready. */
+  loadSprite(assetId, source, options = {}) {
+    if (this.destroyed) {
+      return Promise.reject(new Error("Engine sudah dihancurkan dan tidak dapat memuat asset."));
+    }
+    return this.assets.load(assetId, source, options).then((image) => {
+      if (!this.destroyed) this.render();
+      return image;
+    });
+  }
+
+  /** Removes a sprite asset registration and redraws objects using that asset. */
+  removeSprite(assetId) {
+    const removed = this.assets.remove(assetId);
+    if (removed && !this.destroyed) this.render();
+    return removed;
   }
 
   /** Koordinat grid kontinu di bawah pointer, atau null bila di luar Canvas. */
@@ -432,15 +486,22 @@ export class Engine {
             this.confirmObjectPlacement();
           } else {
             const tile = this.tileHover.hoveredTile;
-            if (tile) {
-              const focused = this.tileSelection.selectedTile;
-              if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
-                selectionChanged = this.tileSelection.clear();
-              } else {
-                selectionChanged = this.tileSelection.select(tile);
+            const object = tile ? this.objectSelection.selectAt(tile.x, tile.y) : null;
+            if (object) {
+              this.notifyObjectSelectionChange();
+            } else {
+              const objectCleared = this.objectSelection.clear();
+              if (objectCleared) this.notifyObjectSelectionChange();
+              if (tile) {
+                const focused = this.tileSelection.selectedTile;
+                if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
+                  selectionChanged = this.tileSelection.clear();
+                } else {
+                  selectionChanged = this.tileSelection.select(tile);
+                }
               }
+              if (selectionChanged) this.notifySelectionChange();
             }
-            if (selectionChanged) this.notifySelectionChange();
           }
         }
       }
@@ -511,7 +572,8 @@ export class Engine {
     this.renderer.render(this.world, this.camera, {
       hoveredTileId: this.tileHover.hoveredTile?.id ?? null,
       selectedTileIds: this.tileSelection.selectedTiles.map((tile) => tile.id),
-      objectPlacementPreview: this.objectPlacement.getPreview()
+      objectPlacementPreview: this.objectPlacement.getPreview(),
+      selectedObjectId: this.objectSelection.selectedObjectId
     });
   }
 
@@ -541,7 +603,9 @@ export class Engine {
     this.canvas.classList?.remove("is-dragging");
     this.pointerSession = null;
     this.objectPlacement.cancel();
+    this.assets.clear();
     this.clearHover();
     if (this.tileSelection.clear()) this.notifySelectionChange();
+    if (this.objectSelection.clear()) this.notifyObjectSelectionChange();
   }
 }

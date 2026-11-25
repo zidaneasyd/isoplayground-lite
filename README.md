@@ -61,7 +61,6 @@ Pengujian menggunakan test runner bawaan Node.js.
 - `ObjectFootprint.getGridCells(x, y)` menghasilkan semua koordinat tile yang dicakup dalam urutan diagonal grid.
 - `ObjectFootprint.fitsWithinWorld(width, height, x, y)` memvalidasi agar seluruh footprint berada di dalam batas dunia.
 - `ObjectFootprint.getCoveredTiles(world, x, y)` mengembalikan referensi tile persisten, atau `null` jika footprint keluar dari batas dunia.
-- Footprint belum melakukan placement, deteksi tumpang tindih, collision, elevation integration, atau sprite rendering; itu ditangani tahap berikutnya.
 
 ## Object placement — Level 3.3
 
@@ -78,3 +77,76 @@ Pengujian menggunakan test runner bawaan Node.js.
 - Preview hanya menggambar cakupan footprint; sprite objek belum dirender. Sprite rendering masuk tahap 3.5.
 
 Sesi penempatan dimulai oleh kode aplikasi/fitur pemanggil dengan membuat `WorldObject` lalu memanggil `engine.beginObjectPlacement(object)`. Tahap ini belum menambahkan katalog aset atau panel Object Inspector.
+
+## Object elevation integration — Level 3.4
+
+- `WorldObject.elevationOffset` adalah offset elevasi relatif objek dalam unit elevasi dunia. Nilai finite positif mengangkat objek, nilai negatif menurunkannya, dan default-nya `0`.
+- Elevasi efektif objek dihitung secara dinamis sebagai `world.getTile(object.x, object.y).elevation + object.elevationOffset`. Elevasi tile tidak disalin ke model objek, sehingga perubahan elevation pada anchor langsung diikuti objek.
+- Untuk footprint multi-tile, tile anchor `(x, y)` menentukan bidang dasar vertikal objek. Elevasi tile lain yang masuk footprint tidak dirata-ratakan atau dimutasi; aturan permukaan miring/penyangga belum termasuk tahap ini.
+- `resolveObjectElevation(world, object, anchor?)` mengembalikan elevasi anchor, offset, dan elevasi efektif. Parameter `anchor` memungkinkan penghitungan kandidat lokasi saat memindahkan objek tanpa mengubah anchor tersimpan.
+- `getObjectWorldPosition(world, object, tileConfig, anchor?)` mengubah anchor dan elevasi efektif menjadi titik ground-anchor pada ruang isometrik. Transformasi kamera tetap diterapkan bersama transformasi Canvas Renderer, sehingga pan dan zoom tidak membutuhkan posisi objek yang disimpan ulang.
+- Object placement preview memuat `anchorElevation`, `elevationOffset`, dan `elevation`. Seluruh sel footprint preview digambar pada bidang elevasi anchor yang sama. Preview mengikuti perubahan elevation anchor sebelum konfirmasi.
+- Konfirmasi placement/move hanya menyimpan koordinat anchor objek. Elevasi tile tidak diubah oleh operasi objek.
+- Sprite belum dirender pada tahap ini; pemakaian posisi ground-anchor untuk sprite menjadi bagian dari tahap 3.5.
+
+
+## Sprite asset dan rendering — Level 3.5
+
+- `AssetManager` memuat dan menyimpan referensi gambar berdasarkan `assetId`. `WorldObject` hanya menyimpan ID asset, bukan instance gambar.
+- `engine.loadSprite(assetId, source, options?)` memuat gambar melalui browser `Image` API. Promise selesai setelah gambar siap digunakan oleh Canvas. ID asset yang sama tidak dapat dipakai untuk sumber gambar berbeda tanpa menghapus registrasi sebelumnya.
+- Opsi asset: `width` dan `height` mengatur ukuran tampilan dalam unit dunia; bila hanya salah satu yang diberikan, rasio gambar asli dipertahankan. `anchorX` dan `anchorY` menentukan titik jangkar ternormalisasi (rentang 0–1), dengan default bawah-tengah (`0.5`, `1`). `imageSmoothingEnabled` dapat mengatur smoothing khusus untuk gambar tersebut.
+- `engine.assets.get(assetId)` mengembalikan metadata gambar yang sudah siap, sedangkan `engine.assets.getStatus(assetId)` memberikan status `missing`, `loading`, `loaded`, atau `error`.
+- `engine.removeSprite(assetId)` menghapus asset dari registry dan menggambar ulang dunia. `engine.destroy()` membersihkan registry asset milik Engine.
+- `SpriteRenderer` menghitung posisi gambar dari ground-anchor objek dan elevasi efektif Level 3.4. Untuk footprint multi-tile, titik gambar dipusatkan pada area footprint; anchor gambar bawaan berada pada bawah-tengah gambar.
+- Sprite digabungkan dengan urutan render tile menggunakan depth diagonal pusat footprint (`centerX + centerY`), lalu posisi horizontal isometrik (`centerX - centerY`) sebagai pemecah seri. Tile pada titik grid yang sama digambar lebih dahulu, lalu sprite; tile yang lebih dekat ke depan digambar setelah sprite sehingga dapat menutup bagian sprite yang berada di belakangnya.
+- Sprite memakai transformasi Canvas dunia yang sama dengan tile, sehingga kamera pan dan zoom berlaku tanpa menghitung ulang posisi layar. Sprite yang asset-nya belum dimuat atau gagal dimuat tidak digambar.
+- Akses runtime aplikasi tersedia melalui `window.isoPlayground`, yang menyediakan `engine`, `world`, `loadSprite(...)`, dan `removeSprite(...)`.
+
+Contoh penggunaan dari modul JavaScript aplikasi:
+
+```js
+import { WorldObject } from "./src/objects/world-object.js";
+
+await window.isoPlayground.loadSprite("pool", "./assets/pool.png", {
+  width: 320,
+  height: 160,
+  anchorX: 0.5,
+  anchorY: 1
+});
+
+const pool = new WorldObject({
+  id: "pool-01",
+  type: "pool",
+  name: "Swimming Pool",
+  assetId: "pool",
+  x: 2,
+  y: 2,
+  footprint: { width: 5, height: 7 }
+});
+
+window.isoPlayground.world.objects.add(pool);
+window.isoPlayground.engine.refreshWorldView();
+```
+
+Tahap ini belum menyediakan UI katalog/import asset, seleksi sprite, atlas/spritesheet animation, atau collider. Pengelolaan asset dan pembuatan objek masih melalui API aplikasi.
+
+## Level 3.6 — Object Selection & Inspector
+
+- Object selection is independent from tile selection and resolves the topmost object whose footprint contains the clicked grid cell.
+- Clicking an object selects it and opens Object Inspector; clicking an unoccupied tile returns to Tile Inspector.
+- Selected object footprints receive a blue outline on the object's effective elevation plane.
+- Object Inspector edits name, asset ID, anchor coordinates, footprint dimensions, elevation offset, and JSON custom properties.
+- Inspector edits validate anchor bounds and the complete footprint before applying changes.
+- **Move** starts the existing placement preview workflow; click a valid destination to confirm or press Escape/right-click to cancel.
+- **Delete** removes the object from the world and clears its selection.
+- Runtime API: `window.isoPlayground.createObject(definition)`, `beginObjectMove(objectId)`, and `removeObject(objectId)`. `createObject` begins placement; click a valid anchor on the canvas to commit it.
+- Object selection does not mutate tile data. Object/tile multi-selection, collision/occupancy, and pixel-perfect sprite hit testing are not part of this stage.
+
+## Level 3.7 — Integration & Regression Testing
+
+- Added cross-module integration coverage for the complete object lifecycle: placement, footprint coverage, object selection notification, move confirmation, and deletion/selection cleanup.
+- Added regression coverage proving invalid out-of-bounds footprints cannot be committed and failed moves do not mutate the stored anchor.
+- Added integration coverage for dynamic anchor-tile elevation, relative object elevation offsets, and recalculation after moving an object.
+- Added integration coverage proving registered sprite assets are drawn by the same Engine world and can be removed from the asset registry.
+- The integration tests use the real Engine, World, ObjectPlacement, ObjectSelection, elevation resolver, and Renderer path with a controlled Canvas/browser test harness.
+- Run the complete suite with `npm test`.

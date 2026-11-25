@@ -1,11 +1,14 @@
 import { gridToScreen } from "../world/coordinates.js";
+import { SpriteRenderer } from "./sprite-renderer.js";
+import { resolveObjectElevation } from "../objects/object-elevation.js";
 
 export class Renderer {
-  constructor(ctx, config) {
+  constructor(ctx, config, { assetManager = null } = {}) {
     this.ctx = ctx;
     this.config = config;
     this.width = 0;
     this.height = 0;
+    this.spriteRenderer = new SpriteRenderer(ctx, config, assetManager);
   }
 
   setViewport(width, height) {
@@ -112,7 +115,8 @@ export class Renderer {
     hoveredTileId = null,
     selectedTileId = null,
     selectedTileIds = null,
-    objectPlacementPreview = null
+    objectPlacementPreview = null,
+    selectedObjectId = null
   } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
@@ -136,7 +140,37 @@ export class Renderer {
     const selectedOverlays = [];
     const selectedIds = new Set(selectedTileIds ?? (selectedTileId == null ? [] : [selectedTileId]));
 
+    const renderCommands = [];
+    let tileOrder = 0;
     for (const tile of world.getTiles()) {
+      renderCommands.push({
+        type: "tile",
+        depth: tile.x + tile.y,
+        secondaryDepth: tile.x - tile.y,
+        order: tileOrder++,
+        tile
+      });
+    }
+    for (const sprite of this.spriteRenderer.getRenderCommands(world)) {
+      renderCommands.push(sprite);
+    }
+    renderCommands.sort((a, b) => {
+      if (a.depth !== b.depth) return a.depth - b.depth;
+      if (a.secondaryDepth !== b.secondaryDepth) {
+        return a.secondaryDepth - b.secondaryDepth;
+      }
+      // A tile at the same grid point establishes the ground before its sprite.
+      if (a.type !== b.type) return a.type === "tile" ? -1 : 1;
+      return a.order - b.order;
+    });
+
+    for (const command of renderCommands) {
+      if (command.type === "sprite") {
+        this.spriteRenderer.draw(command);
+        continue;
+      }
+
+      const tile = command.tile;
       const { x, y, elevation = 0 } = tile;
       const isHovered = tile.id === hoveredTileId;
       const isSelected = selectedIds.has(tile.id);
@@ -191,6 +225,23 @@ this.#traceTileDiamond(p, elevatedY, tileW, tileH);
       ctx.stroke();
     }
 
+    const selectedObject = selectedObjectId === null
+      ? null
+      : world.objects?.getById(selectedObjectId);
+    if (selectedObject) {
+      const resolved = resolveObjectElevation(world, selectedObject);
+      if (resolved) {
+        for (const cell of selectedObject.footprint.getGridCells(selectedObject.x, selectedObject.y)) {
+          const p = gridToScreen(cell.x, cell.y, tileW, tileH);
+          const elevatedY = p.y - resolved.elevation * elevationStep;
+          this.#traceTileDiamond(p, elevatedY, tileW, tileH);
+          ctx.strokeStyle = config.colors.objectSelectedOutline ?? "#3478f6";
+          ctx.lineWidth = 2 / zoom;
+          ctx.stroke();
+        }
+      }
+    }
+
     if (objectPlacementPreview) {
       const previewFill = objectPlacementPreview.valid
         ? (config.colors.objectPlacementFill ?? "rgba(52, 120, 246, 0.18)")
@@ -204,7 +255,10 @@ this.#traceTileDiamond(p, elevatedY, tileW, tileH);
         if (!tile) continue;
 
         const p = gridToScreen(cell.x, cell.y, tileW, tileH);
-        const elevatedY = p.y - tile.elevation * elevationStep;
+        const previewElevation = Number.isFinite(objectPlacementPreview.elevation)
+          ? objectPlacementPreview.elevation
+          : tile.elevation;
+        const elevatedY = p.y - previewElevation * elevationStep;
         this.#traceTileDiamond(p, elevatedY, tileW, tileH);
         ctx.fillStyle = previewFill;
         ctx.fill();

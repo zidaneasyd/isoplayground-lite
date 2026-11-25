@@ -4,6 +4,8 @@ import { Renderer } from "../src/rendering/renderer.js";
 import { World } from "../src/world/world.js";
 import { Camera } from "../src/camera/camera.js";
 import { CONFIG } from "../src/core/config.js";
+import { AssetManager } from "../src/assets/asset-manager.js";
+import { WorldObject } from "../src/objects/world-object.js";
 
 function makeContext() {
   const calls = [];
@@ -20,6 +22,7 @@ function makeContext() {
   for (const method of [
     "clearRect",
     "fillRect",
+    "drawImage",
     "save",
     "translate",
     "scale",
@@ -574,4 +577,115 @@ test("renderer marks an invalid object placement preview with warning styling", 
   assert.equal(fillRecords.at(-1).style, "rgba(224, 76, 76, 0.18)");
   assert.equal(strokeRecords.at(-1).style, "#e04c4c");
   assertDiamondPath(strokeRecords.at(-1));
+});
+
+test("renderer draws every object footprint preview cell on the anchor elevation plane", () => {
+  const { ctx, strokeRecords } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 4, height: 4 });
+  world.getTile(1, 1).elevation = 3;
+  world.getTile(2, 1).elevation = -2;
+  world.getTile(1, 2).elevation = 1;
+  world.getTile(2, 2).elevation = 0;
+
+  const cells = [
+    { x: 1, y: 1 },
+    { x: 2, y: 1 },
+    { x: 1, y: 2 },
+    { x: 2, y: 2 }
+  ];
+  renderer.render(world, new Camera(CONFIG.camera), {
+    objectPlacementPreview: {
+      valid: true,
+      elevation: 4,
+      cells
+    }
+  });
+
+  const previewStrokes = strokeRecords.slice(-cells.length);
+  assert.equal(previewStrokes.length, cells.length);
+  for (let index = 0; index < cells.length; index++) {
+    const { x, y } = cells[index];
+    const expectedTopY = (x + y) * CONFIG.tile.height / 2 - 4 * CONFIG.tile.elevationStep;
+    assert.equal(previewStrokes[index].path[0][2], expectedTopY);
+  }
+});
+
+
+test("renderer interleaves a tile sprite at its isometric depth instead of drawing it over the full world", async () => {
+  const { ctx, calls } = makeContext();
+  class FakeImage {
+    constructor() {
+      this.naturalWidth = 32;
+      this.naturalHeight = 64;
+    }
+    set src(value) {
+      this._src = value;
+      queueMicrotask(() => this.onload?.());
+    }
+  }
+
+  const assets = new AssetManager({ ImageClass: FakeImage });
+  await assets.load("tree", "/sprites/tree.png");
+  const renderer = new Renderer(ctx, CONFIG, { assetManager: assets });
+  renderer.setViewport(320, 240);
+
+  const world = new World({ width: 3, height: 1 });
+  world.objects.add(new WorldObject({
+    id: "tree-1",
+    type: "tree",
+    assetId: "tree",
+    x: 0,
+    y: 0
+  }));
+
+  renderer.render(world, new Camera({ zoom: 1 }));
+
+  const imageIndex = calls.findIndex(([name]) => name === "drawImage");
+  const groundFillIndices = calls
+    .map(([name], index) => name === "fill" ? index : -1)
+    .filter((index) => index >= 0);
+
+  assert.ok(imageIndex > groundFillIndices[0], "sprite is drawn after its anchor tile surface");
+  assert.ok(imageIndex < groundFillIndices[1], "sprite is drawn before the next foreground tile");
+  assert.ok(imageIndex > calls.findIndex(([name]) => name === "scale"), "sprite shares the camera world transform");
+  assert.equal(calls.filter(([name]) => name === "drawImage").length, 1);
+});
+
+test("renderer keeps the existing tile-only draw order when no sprite asset is loaded", () => {
+  const { ctx, calls } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(320, 240);
+  const world = new World({ width: 2, height: 2 });
+  world.objects.add(new WorldObject({
+    id: "missing-sprite",
+    type: "tree",
+    assetId: "not-loaded",
+    x: 0,
+    y: 0
+  }));
+
+  renderer.render(world, new Camera({ zoom: 1 }));
+  assert.equal(calls.some(([name]) => name === "drawImage"), false);
+  assert.equal(calls.filter(([name]) => name === "fill").length, 4);
+});
+
+test("renderer outlines every cell of the selected object footprint at object elevation", () => {
+  const { ctx, strokeRecords } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 5, height: 5 });
+  world.getTile(1, 1).elevation = 2;
+  const object = new WorldObject({
+    id: "selected-pool", type: "pool", x: 1, y: 1,
+    footprint: { width: 2, height: 3 }, elevationOffset: 1
+  });
+  world.objects.add(object);
+  renderer.render(world, new Camera(CONFIG.camera), { selectedObjectId: object.id });
+  const selectedStrokes = strokeRecords.slice(-6);
+  assert.equal(selectedStrokes.length, 6);
+  assert.ok(selectedStrokes.every((record) => record.style === (CONFIG.colors.objectSelectedOutline ?? "#3478f6")));
+  const expectedY = (1 + 1) * CONFIG.tile.height / 2 - 3 * CONFIG.tile.elevationStep;
+  assert.equal(selectedStrokes[0].path[0][2], expectedY);
 });

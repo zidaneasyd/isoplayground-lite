@@ -736,3 +736,71 @@ body {
   color: #6ea6ff;
   font-weight: 500;
 }
+
+
+/* Object Inspector */
+.object-inspector {
+  position: fixed;
+  z-index: 3;
+  top: 18px;
+  right: 18px;
+  width: min(320px, calc(100vw - 36px));
+  max-height: calc(100vh - 36px);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  background: rgba(28, 28, 28, 0.97);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(14px);
+}
+
+.object-inspector[hidden] { display: none; }
+.object-inspector__content { display: grid; gap: 10px; padding-top: 14px; }
+.object-inspector__content[hidden] { display: none; }
+.object-inspector__identity {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 7px 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+  color: #858585;
+  font-size: 9px;
+  letter-spacing: .08em;
+}
+.object-inspector__identity strong { color: #e8e8e8; font-size: 11px; letter-spacing: 0; text-align: right; }
+.object-inspector__field { display: grid; gap: 5px; color: #a0a0a0; font-size: 10px; }
+.object-inspector__field input,
+.object-inspector__field textarea {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid rgba(255,255,255,.1);
+  border-radius: 5px;
+  outline: none;
+  color: #e8e8e8;
+  background: #202020;
+  font: inherit;
+  font-size: 11px;
+}
+.object-inspector__field input:focus,
+.object-inspector__field textarea:focus { border-color: #3478f6; }
+.object-inspector__field textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.object-inspector__grid-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+.object-inspector__actions { display: flex; gap: 7px; }
+.object-inspector__actions button {
+  flex: 1;
+  min-height: 30px;
+  border: 1px solid rgba(255,255,255,.12);
+  border-radius: 5px;
+  color: #e8e8e8;
+  background: #292929;
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+.object-inspector__actions button:first-child { border-color: rgba(52,120,246,.55); background: #234a86; }
+.object-inspector__actions button:last-child { color: #f08a8a; }
+.object-inspector__actions button:hover { filter: brightness(1.15); }
+.object-inspector__error { min-height: 0; margin: 0; color: #f08a8a; font-size: 10px; }
+.object-inspector__hint { margin: 0; color: #858585; font-size: 9px; line-height: 1.5; }

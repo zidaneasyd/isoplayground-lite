@@ -37,6 +37,9 @@ test("object placement starts a new object without registering it before confirm
     y: 1,
     width: 5,
     height: 7,
+    anchorElevation: 0,
+    elevationOffset: 0,
+    elevation: 0,
     valid: true,
     reason: null,
     cells: object.footprint.getGridCells(2, 1)
@@ -218,4 +221,82 @@ test("object placement allows footprint overlap until collision rules are introd
   assert.equal(placement.getPreview().valid, true);
   assert.equal(placement.confirm().id, "second");
   assert.equal(world.objects.size, 2);
+});
+
+
+test("placement preview resolves the anchor tile elevation plus object offset", () => {
+  const world = new World({ width: 6, height: 6 });
+  world.getTile(2, 3).elevation = 4;
+  const object = new WorldObject({
+    id: "raised-pool",
+    type: "prop",
+    x: 2,
+    y: 3,
+    footprint: { width: 3, height: 2 },
+    elevationOffset: 1.5
+  });
+  const placement = new ObjectPlacement(world);
+
+  placement.beginPlacement(object);
+  assert.deepEqual(
+    (({ anchorElevation, elevationOffset, elevation }) => ({ anchorElevation, elevationOffset, elevation }))(placement.getPreview()),
+    { anchorElevation: 4, elevationOffset: 1.5, elevation: 5.5 }
+  );
+  assert.equal(world.getTile(2, 3).elevation, 4);
+});
+
+test("placement preview follows live anchor elevation changes without caching tile elevation", () => {
+  const world = new World({ width: 6, height: 6 });
+  const anchorTile = world.getTile(2, 3);
+  anchorTile.elevation = 3;
+  const object = createObject("dynamic-object", 2, 3);
+  const placement = new ObjectPlacement(world);
+  placement.beginPlacement(object);
+
+  assert.equal(placement.getPreview().elevation, 3);
+  anchorTile.elevation = -2;
+  assert.equal(placement.getPreview().anchorElevation, -2);
+  assert.equal(placement.getPreview().elevation, -2);
+  assert.equal(object.elevationOffset, 0);
+});
+
+test("moving an object previews the destination anchor elevation and preserves its offset", () => {
+  const world = new World({ width: 8, height: 8 });
+  world.getTile(1, 1).elevation = 2;
+  world.getTile(4, 3).elevation = -3;
+  const object = new WorldObject({
+    id: "moving-object",
+    type: "prop",
+    x: 1,
+    y: 1,
+    elevationOffset: -0.5
+  });
+  world.objects.add(object);
+  const placement = new ObjectPlacement(world);
+
+  placement.beginMove(object.id);
+  assert.equal(placement.getPreview().elevation, 1.5);
+  placement.updatePreview(4, 3);
+  assert.equal(placement.getPreview().anchorElevation, -3);
+  assert.equal(placement.getPreview().elevation, -3.5);
+  assert.equal(object.x, 1);
+  assert.equal(object.y, 1);
+
+  assert.equal(placement.confirm(), object);
+  assert.equal(object.x, 4);
+  assert.equal(object.y, 3);
+  assert.equal(object.elevationOffset, -0.5);
+  assert.equal(world.getTile(4, 3).elevation, -3);
+});
+
+test("placement reports a missing anchor tile as invalid", () => {
+  const world = new World({ width: 4, height: 4 });
+  world.getTile = () => null;
+  const placement = new ObjectPlacement(world);
+  placement.beginPlacement(createObject("missing-anchor"));
+
+  assert.equal(placement.getPreview().valid, false);
+  assert.equal(placement.getPreview().reason, "missing-anchor");
+  assert.equal(placement.confirm(), false);
+  assert.equal(placement.active, true);
 });

@@ -1,4 +1,5 @@
 import { WorldObject } from "../objects/world-object.js";
+import { resolveObjectElevation } from "../objects/object-elevation.js";
 
 /**
  * Controls the temporary placement or move of one WorldObject.
@@ -13,6 +14,7 @@ export class ObjectPlacement {
     if (
       !world ||
       typeof world !== "object" ||
+      typeof world.getTile !== "function" ||
       !world.objects ||
       typeof world.objects.getById !== "function" ||
       typeof world.objects.has !== "function" ||
@@ -43,7 +45,10 @@ export class ObjectPlacement {
       x: object.x,
       y: object.y,
       valid: false,
-      reason: null
+      reason: null,
+      elevation: null,
+      anchorElevation: null,
+      elevationOffset: object.elevationOffset
     };
     this.#evaluate();
     return true;
@@ -61,7 +66,10 @@ export class ObjectPlacement {
       x: object.x,
       y: object.y,
       valid: false,
-      reason: null
+      reason: null,
+      elevation: null,
+      anchorElevation: null,
+      elevationOffset: object.elevationOffset
     };
     this.#evaluate();
     return true;
@@ -96,18 +104,38 @@ export class ObjectPlacement {
     if (session.x === null || session.y === null) {
       session.valid = false;
       session.reason = "no-target";
+      session.elevation = null;
+      session.anchorElevation = null;
       return;
     }
 
     if (session.mode === "move" && this.#world.objects.getById(session.object.id) !== session.object) {
       session.valid = false;
       session.reason = "object-removed";
+      session.elevation = null;
+      session.anchorElevation = null;
       return;
     }
 
     if (this.#world.objects.has(session.object.id) && session.mode === "place") {
       session.valid = false;
       session.reason = "duplicate-id";
+      session.elevation = null;
+      session.anchorElevation = null;
+      return;
+    }
+
+    const elevation = resolveObjectElevation(this.#world, session.object, {
+      x: session.x,
+      y: session.y
+    });
+    session.anchorElevation = elevation?.anchorElevation ?? null;
+    session.elevationOffset = session.object.elevationOffset;
+    session.elevation = elevation?.elevation ?? null;
+
+    if (!elevation) {
+      session.valid = false;
+      session.reason = "missing-anchor";
       return;
     }
 
@@ -153,7 +181,7 @@ export class ObjectPlacement {
   getPreview() {
     if (!this.#session) return null;
     this.#evaluate();
-    const { object, mode, x, y, valid, reason } = this.#session;
+    const { object, mode, x, y, valid, reason, elevation, anchorElevation, elevationOffset } = this.#session;
     return {
       mode,
       objectId: object.id,
@@ -161,6 +189,9 @@ export class ObjectPlacement {
       y,
       width: object.footprint.width,
       height: object.footprint.height,
+      anchorElevation,
+      elevationOffset,
+      elevation,
       valid,
       reason,
       cells: x === null || y === null

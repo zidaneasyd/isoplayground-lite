@@ -226,6 +226,44 @@
 </section>
   </aside>
 
+  <aside id="object-inspector" class="object-inspector" aria-labelledby="object-inspector-title" hidden>
+    <header class="tile-inspector__header">
+      <div>
+        <p class="tile-inspector__eyebrow">OBJECT</p>
+        <h1 id="object-inspector-title">Object Inspector</h1>
+      </div>
+      <span class="tile-inspector__status" data-object-status aria-live="polite">NO OBJECT SELECTED</span>
+    </header>
+    <div class="tile-inspector__empty" data-object-empty>
+      <span class="tile-inspector__empty-icon" aria-hidden="true">◇</span>
+      <strong>No object selected</strong>
+      <p>Pilih objek pada grid untuk melihat dan mengedit propertinya.</p>
+    </div>
+    <section class="object-inspector__content" data-object-content hidden>
+      <div class="object-inspector__identity">
+        <span>ID</span><strong data-object-value="id">—</strong>
+        <span>TYPE</span><strong data-object-value="type">—</strong>
+      </div>
+      <label class="object-inspector__field">Name<input data-object-input="name" type="text" required></label>
+      <label class="object-inspector__field">Asset ID<input data-object-input="assetId" type="text" placeholder="asset-id"></label>
+      <div class="object-inspector__grid-fields">
+        <label class="object-inspector__field">Anchor X<input data-object-input="x" type="number" min="0" step="1"></label>
+        <label class="object-inspector__field">Anchor Y<input data-object-input="y" type="number" min="0" step="1"></label>
+        <label class="object-inspector__field">Width<input data-object-input="width" type="number" min="1" step="1"></label>
+        <label class="object-inspector__field">Height<input data-object-input="height" type="number" min="1" step="1"></label>
+      </div>
+      <label class="object-inspector__field">Elevation Offset<input data-object-input="elevationOffset" type="number" step="any"></label>
+      <label class="object-inspector__field">Custom Properties<textarea data-object-input="properties" rows="5" spellcheck="false"></textarea></label>
+      <p class="object-inspector__error" data-object-error role="alert"></p>
+      <div class="object-inspector__actions">
+        <button type="button" data-object-apply>Apply</button>
+        <button type="button" data-object-move>Move</button>
+        <button type="button" data-object-delete>Delete</button>
+      </div>
+      <p class="object-inspector__hint">Move: pilih Move, lalu klik anchor tujuan pada grid. Escape membatalkan.</p>
+    </section>
+  </aside>
+
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

@@ -24,6 +24,7 @@ test("world object stores stable identity, type, anchor, and asset reference", (
   assert.equal(object.assetId, "pool-large");
   assert.equal(object.x, 2);
   assert.equal(object.y, 3);
+  assert.equal(object.elevationOffset, 0);
   assert.deepEqual(object.properties, {});
   assert.equal("elevation" in object, false);
   assert.deepEqual(object.footprint.toJSON(), { width: 1, height: 1 });
@@ -135,6 +136,7 @@ test("world object deeply copies property data and serializes a detached snapsho
     x: 2,
     y: 3,
     footprint: { width: 1, height: 1 },
+    elevationOffset: 0,
     properties: { material: "concrete", capacity: 8 }
   });
 });
@@ -151,4 +153,27 @@ test("world object rejects non-JSON and non-object property data", () => {
   const circular = {};
   circular.self = circular;
   assert.throws(() => createObject({ properties: circular }), TypeError);
+});
+
+
+test("world object stores and serializes a relative elevation offset", () => {
+  const object = createObject({ elevationOffset: 1.5 });
+
+  assert.equal(object.elevationOffset, 1.5);
+  assert.equal(JSON.parse(JSON.stringify(object)).elevationOffset, 1.5);
+
+  object.elevationOffset = -2;
+  assert.equal(object.elevationOffset, -2);
+  assert.equal(JSON.parse(JSON.stringify(object)).elevationOffset, -2);
+});
+
+test("world object rejects non-finite elevation offsets without changing valid state", () => {
+  const object = createObject({ elevationOffset: 2 });
+
+  for (const value of [NaN, Infinity, -Infinity, "1", null]) {
+    assert.throws(() => { object.elevationOffset = value; }, TypeError);
+  }
+
+  assert.equal(object.elevationOffset, 2);
+  assert.equal(createObject().elevationOffset, 0);
 });
