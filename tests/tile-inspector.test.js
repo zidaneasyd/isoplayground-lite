@@ -9,6 +9,7 @@ class MockElement {
     this.textContent = "";
     this.value = "";
     this.checked = false;
+    this.indeterminate = false;
     this.disabled = false;
     this.hidden = false;
     this.dataset = {};
@@ -104,6 +105,7 @@ function makeInspectorRoot() {
 
     '[data-value="id"]',
     '[data-value="coordinates"]',
+    "[data-inspector-identity]",
 
     '[data-input="elevation"]',
     "[data-elevation-decrease]",
@@ -419,6 +421,154 @@ test("inspector displays selected tile identity and properties", () => {
     false
   );
 
+  inspector.destroy();
+});
+
+test("inspector switches empty, single, and multi modes from the supplied selection", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const world = new World({ width: 3, height: 1 });
+  const [first, second, third] = world.getTiles();
+
+  assert.equal(root.elements.get("[data-inspector-status]").textContent, "NO TILE SELECTED");
+  assert.equal(root.elements.get("[data-inspector-empty]").hidden, false);
+
+  inspector.setTiles([first]);
+  assert.equal(root.elements.get("[data-inspector-status]").textContent, "TILE SELECTED");
+  assert.equal(root.elements.get("[data-value=\"id\"]").textContent, first.id);
+  assert.equal(root.elements.get("[data-inspector-identity]").hidden, false);
+
+  inspector.setTiles([first, second, third]);
+  assert.equal(root.elements.get("[data-inspector-status]").textContent, "MULTI TILE SELECTED (3)");
+  assert.equal(root.elements.get("[data-inspector-empty]").hidden, true);
+  assert.equal(root.elements.get("[data-inspector-content]").hidden, false);
+  assert.equal(root.elements.get("[data-inspector-identity]").hidden, true);
+  assert.equal(root.elements.get("[data-value=\"id\"]").textContent, "—");
+  assert.equal(root.elements.get("[data-value=\"coordinates\"]").textContent, "—");
+
+  inspector.setTiles([second]);
+  assert.equal(root.elements.get("[data-inspector-status]").textContent, "TILE SELECTED");
+  assert.equal(root.elements.get("[data-value=\"id\"]").textContent, second.id);
+  assert.equal(root.elements.get("[data-inspector-identity]").hidden, false);
+
+  inspector.setTiles([]);
+  assert.equal(root.elements.get("[data-inspector-status]").textContent, "NO TILE SELECTED");
+  assert.equal(root.elements.get("[data-inspector-empty]").hidden, false);
+  assert.equal(root.elements.get("[data-inspector-content]").hidden, true);
+  assert.equal(root.elements.get("[data-elevation-increase]").disabled, true);
+  inspector.destroy();
+});
+
+test("multi inspector shows uniform and mixed values and edits every selected tile relatively", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const world = new World({ width: 4, height: 1 });
+  const [first, second, third, unselected] = world.getTiles();
+  first.elevation = 2;
+  second.elevation = 4;
+  third.elevation = 6;
+  first.terrain = "grass";
+  second.terrain = "grass";
+  third.terrain = "water";
+  first.walkable = true;
+  second.walkable = false;
+  third.walkable = true;
+  unselected.elevation = 10;
+  unselected.terrain = "water";
+  unselected.walkable = true;
+
+  inspector.setTiles([first, second]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "Mixed");
+  assert.equal(root.elements.get("[data-terrain-value]").textContent, "grass");
+  assert.equal(root.elements.get('[data-input="walkable"]').indeterminate, true);
+
+  inspector.setTiles([first, second, third]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "Mixed");
+  assert.equal(root.elements.get("[data-terrain-value]").textContent, "Mixed");
+  assert.equal(root.elements.get('[data-input="walkable"]').indeterminate, true);
+  assert.equal(root.elements.get('[data-input="walkable"]').checked, false);
+  assert.notEqual(first.elevation, "Mixed");
+  assert.notEqual(first.terrain, "Mixed");
+  assert.notEqual(first.walkable, "Mixed");
+  assert.equal(inspector.updateTileProperty("elevation", "Mixed"), false);
+  assert.equal(inspector.updateTileProperty("terrain", "Mixed"), false);
+  assert.equal(inspector.updateTileProperty("walkable", "Mixed"), false);
+  assert.deepEqual([first.elevation, second.elevation, third.elevation], [2, 4, 6]);
+  assert.deepEqual([first.terrain, second.terrain, third.terrain], ["grass", "grass", "water"]);
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [true, false, true]);
+
+  const walkable = root.elements.get('[data-input="walkable"]');
+  walkable.indeterminate = true;
+  walkable.checked = false;
+  walkable.dispatch("change");
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [true, true, true]);
+  assert.equal(walkable.indeterminate, false);
+  walkable.checked = false;
+  walkable.dispatch("change");
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [false, false, false]);
+  assert.equal(walkable.indeterminate, false);
+  first.walkable = true;
+  second.walkable = false;
+  third.walkable = true;
+  inspector.syncValues();
+  assert.equal(walkable.indeterminate, true);
+
+  root.elements.get("[data-elevation-increase]").dispatch("click");
+  assert.deepEqual([first.elevation, second.elevation, third.elevation], [3, 5, 7]);
+  assert.equal(unselected.elevation, 10);
+  assert.deepEqual([first.terrain, second.terrain, third.terrain], ["grass", "grass", "water"]);
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [true, false, true]);
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  assert.deepEqual([first.elevation, second.elevation, third.elevation], [2, 4, 6]);
+
+  first.elevation = -2;
+  second.elevation = 0;
+  third.elevation = 2;
+  inspector.syncValues();
+  root.elements.get("[data-elevation-decrease]").dispatch("click");
+  assert.deepEqual([first.elevation, second.elevation, third.elevation], [-3, -1, 1]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "Mixed");
+
+  root.elements.get('[data-terrain-option="stone"]').dispatch("click");
+  assert.deepEqual([first.terrain, second.terrain, third.terrain], ["stone", "stone", "stone"]);
+  assert.equal(unselected.terrain, "water");
+  assert.equal(unselected.elevation, 10);
+  assert.equal(unselected.walkable, true);
+  assert.equal(root.elements.get("[data-terrain-value]").textContent, "stone");
+  assert.deepEqual([first.elevation, second.elevation, third.elevation], [-3, -1, 1]);
+
+  walkable.indeterminate = true;
+  walkable.checked = false;
+  walkable.dispatch("change");
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [true, true, true]);
+  assert.equal(walkable.indeterminate, false);
+  walkable.checked = false;
+  walkable.dispatch("change");
+  assert.deepEqual([first.walkable, second.walkable, third.walkable], [false, false, false]);
+  assert.equal(unselected.walkable, true);
+  inspector.destroy();
+});
+
+test("multi inspector reflects external keyboard elevation changes and selection updates", () => {
+  const root = makeInspectorRoot();
+  const inspector = new TileInspector(root);
+  const world = new World({ width: 3, height: 1 });
+  const [first, second, third] = world.getTiles();
+  first.elevation = 1;
+  second.elevation = 1;
+  inspector.setTiles([first, second]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "1");
+
+  first.elevation += 1;
+  second.elevation += 1;
+  inspector.syncValues();
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "2");
+
+  inspector.setTiles([third, first]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, "Mixed");
+  inspector.setTiles([third]);
+  assert.equal(root.elements.get('[data-input="elevation"]').textContent, String(third.elevation));
+  assert.equal(root.elements.get('[data-value="id"]').textContent, third.id);
   inspector.destroy();
 });
 

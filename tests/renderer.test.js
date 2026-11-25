@@ -438,6 +438,23 @@ test("selected outline is rendered after hover outline when different tiles are 
     assertDiamondPath(outline);
   }
 });
+
+test("renderer outlines every selected tile above hover, including adjacent selections", () => {
+  const { ctx, fillRecords, strokeRecords } = makeContext();
+  const renderer = new Renderer(ctx, CONFIG);
+  renderer.setViewport(640, 480);
+  const world = new World({ width: 2, height: 2 });
+  const first = world.getTile(0, 0);
+  const second = world.getTile(1, 0);
+  renderer.render(world, new Camera({ zoom: 1 }), {
+    hoveredTileId: first.id,
+    selectedTileIds: [first.id, second.id]
+  });
+  assert.equal(fillRecords.filter((record) => record.style === CONFIG.colors.selected).length, 2);
+  assert.equal(fillRecords.filter((record) => record.style === CONFIG.colors.hover).length, 0);
+  assert.equal(strokeRecords.filter((record) => record.style === CONFIG.colors.selectedOutline).length, 2);
+  assert.equal(strokeRecords.filter((record) => record.style === CONFIG.colors.hoverOutline).length, 0);
+});
 test("one elevation level uses eight pixels and renders both side faces", () => {
   const { ctx, fillRecords } = makeContext();
 

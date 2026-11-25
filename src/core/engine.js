@@ -5,9 +5,10 @@ import { Renderer } from "../rendering/renderer.js";
 import { screenToGrid, screenToTile } from "../world/coordinates.js";
 import { TileHover } from "../interaction/tile-hover.js";
 import { TileSelection } from "../interaction/tile-selection.js";
+import { updateTilesProperty } from "../world/tile-properties.js";
 
 export class Engine {
-  constructor(canvas, config, { onSelectionChange = null } = {}) {
+  constructor(canvas, config, { onSelectionChange = null, onElevationChange = null } = {}) {
     if (!canvas || typeof canvas.getContext !== "function") {
       throw new TypeError("Engine membutuhkan elemen canvas yang valid.");
     }
@@ -19,15 +20,18 @@ export class Engine {
     if (onSelectionChange !== null && typeof onSelectionChange !== "function") {
       throw new TypeError("onSelectionChange harus berupa function atau null.");
     }
+    if (onElevationChange !== null && typeof onElevationChange !== "function") {
+      throw new TypeError("onElevationChange harus berupa function atau null.");
+    }
 
     this.config = config;
     this.onSelectionChange = onSelectionChange;
+    this.onElevationChange = onElevationChange;
     this.world = new World(config.world);
     this.camera = new Camera(config.camera);
     this.renderer = new Renderer(this.ctx, config);
     this.tileHover = new TileHover();
     this.tileSelection = new TileSelection();
-    this.pointerDownPosition = null;
     this.lastPointerClientPosition = null;
     this.loop = new GameLoop(
       (deltaTime) => this.update(deltaTime),
@@ -35,9 +39,7 @@ export class Engine {
     );
 
     this.destroyed = false;
-    this.dragPointerId = null;
-    this.lastPointerX = 0;
-    this.lastPointerY = 0;
+    this.pointerSession = null;
 
     this.resize = this.resize.bind(this);
     this.onPointerDown = this.onPointerDown.bind(this);
@@ -45,6 +47,8 @@ export class Engine {
     this.onPointerLeave = this.onPointerLeave.bind(this);
     this.onPointerEnd = this.onPointerEnd.bind(this);
     this.onWheel = this.onWheel.bind(this);
+    this.onKeyDown = this.onKeyDown.bind(this);
+    this.onContextMenu = (event) => event.preventDefault();
 
     window.addEventListener("resize", this.resize);
     this.canvas.addEventListener("pointerdown", this.onPointerDown);
@@ -54,6 +58,8 @@ export class Engine {
     this.canvas.addEventListener("pointercancel", this.onPointerEnd);
     this.canvas.addEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.addEventListener("wheel", this.onWheel, { passive: false });
+    this.canvas.addEventListener("contextmenu", this.onContextMenu);
+    window.addEventListener("keydown", this.onKeyDown);
 
     this.resize();
   }
@@ -133,6 +139,8 @@ export class Engine {
     return this.tileSelection.selectedTile;
   }
 
+  getSelectedTiles() { return this.tileSelection.getSelectedTiles(); }
+
   /** Updates hover using client coordinates and the current camera transform. */
   updateHoverAtClientPoint(clientX, clientY) {
     this.lastPointerClientPosition = { x: clientX, y: clientY };
@@ -185,35 +193,93 @@ export class Engine {
   }
 
   onPointerDown(event) {
-    if (event.button !== 0 || this.dragPointerId !== null) return;
-    if (event.isPrimary === false || !Number.isFinite(event.pointerId)) return;
+    if (this.pointerSession || ![0, 1, 2].includes(event.button) || !Number.isFinite(event.pointerId)) return;
+    const pan = event.button === 1;
+    if (event.button === 0 && event.isPrimary === false) return;
+    const mode = pan ? "pan" : event.button === 0
+      ? (event.shiftKey ? "add" : "select")
+      : (event.shiftKey ? "remove" : null);
+    if (!mode) return;
 
-    this.dragPointerId = event.pointerId;
-    this.lastPointerX = event.clientX;
-    this.lastPointerY = event.clientY;
-    this.pointerDownPosition = Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
-      ? { x: event.clientX, y: event.clientY }
-      : null;
-    this.canvas.classList?.add("is-dragging");
+    this.pointerSession = {
+      pointerId: event.pointerId,
+      mode,
+      downX: event.clientX,
+      downY: event.clientY,
+      lastX: event.clientX,
+      lastY: event.clientY,
+      processed: new Set()
+    };
+    if (pan) this.canvas.classList?.add("is-dragging");
     this.canvas.setPointerCapture?.(event.pointerId);
-    if (this.updateHoverAtClientPoint(event.clientX, event.clientY)) this.render();
+    const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
+    let selectionChanged = false;
+    if (mode === "add" || mode === "remove") selectionChanged = this.processSelectionPoint(event.clientX, event.clientY);
+    if (selectionChanged) this.notifySelectionChange();
+    if (hoverChanged || selectionChanged) this.render();
+  }
+
+  processSelectionPoint(clientX, clientY) {
+    const session = this.pointerSession;
+    const point = this.clientToCanvas(clientX, clientY);
+    if (!point) return false;
+    this.tileHover.update(point.x, point.y, this.getView());
+    const tile = this.tileHover.hoveredTile;
+    if (!session || !tile || session.processed.has(tile.id)) return false;
+    session.processed.add(tile.id);
+    return session.mode === "add" ? this.tileSelection.add(tile) : this.tileSelection.remove(tile.id);
+  }
+
+  processSelectionSegment(fromX, fromY, toX, toY) {
+    const scale = this.getCanvasClientScale();
+    const step = Math.max(1, Math.min(
+      this.config.tile.width * this.camera.zoom / scale.x,
+      this.config.tile.height * this.camera.zoom / scale.y
+    ) * 0.35);
+    const distance = Math.hypot(toX - fromX, toY - fromY);
+    const count = Math.max(1, Math.ceil(distance / step));
+    let changed = false;
+    for (let index = 1; index <= count; index++) {
+      const ratio = index / count;
+      changed = this.processSelectionPoint(
+        fromX + (toX - fromX) * ratio,
+        fromY + (toY - fromY) * ratio
+      ) || changed;
+    }
+    return changed;
+  }
+
+  notifySelectionChange() {
+    this.onSelectionChange?.(
+      this.tileSelection.selectedTile,
+      this.tileSelection.getSelectedTiles()
+    );
   }
 
   onPointerMove(event) {
-    if (this.dragPointerId !== null && event.pointerId !== this.dragPointerId) return;
+    const session = this.pointerSession;
+    if (session && event.pointerId !== session.pointerId) return;
 
     let cameraChanged = false;
-    if (event.pointerId === this.dragPointerId) {
+    let selectionChanged = false;
+    if (session?.mode === "pan") {
       const scale = this.getCanvasClientScale();
-      const deltaX = (event.clientX - this.lastPointerX) * scale.x;
-      const deltaY = (event.clientY - this.lastPointerY) * scale.y;
-      this.lastPointerX = event.clientX;
-      this.lastPointerY = event.clientY;
+      const deltaX = (event.clientX - session.lastX) * scale.x;
+      const deltaY = (event.clientY - session.lastY) * scale.y;
+      session.lastX = event.clientX;
+      session.lastY = event.clientY;
       cameraChanged = this.camera.panBy(deltaX, deltaY, this.getCameraBounds());
+    } else if (session?.mode === "add" || session?.mode === "remove") {
+      selectionChanged = this.processSelectionSegment(
+        session.lastX, session.lastY, event.clientX, event.clientY
+      );
+      session.lastX = event.clientX;
+      session.lastY = event.clientY;
     }
 
     const hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
-    if (cameraChanged || hoverChanged) this.render();
+    if (selectionChanged) this.notifySelectionChange();
+    if (cameraChanged || hoverChanged || selectionChanged) this.render();
   }
 
   onPointerLeave() {
@@ -221,10 +287,11 @@ export class Engine {
   }
 
   onPointerEnd(event) {
-    if (event.pointerId !== this.dragPointerId) return;
+    const session = this.pointerSession;
+    if (!session || event.pointerId !== session.pointerId) return;
 
-    this.dragPointerId = null;
-    this.canvas.classList?.remove("is-dragging");
+    this.pointerSession = null;
+    if (session.mode === "pan") this.canvas.classList?.remove("is-dragging");
 
     let hoverChanged = false;
     let selectionChanged = false;
@@ -235,20 +302,43 @@ export class Engine {
       hoverChanged = this.clearHover();
     } else if (hasReleasePoint) {
       hoverChanged = this.updateHoverAtClientPoint(event.clientX, event.clientY);
-      if (this.pointerDownPosition) {
+      if (session.mode === "select") {
         const scale = this.getCanvasClientScale();
-        const dx = (event.clientX - this.pointerDownPosition.x) * scale.x;
-        const dy = (event.clientY - this.pointerDownPosition.y) * scale.y;
+        const dx = (event.clientX - session.downX) * scale.x;
+        const dy = (event.clientY - session.downY) * scale.y;
         const clickDistance = Math.hypot(dx, dy);
         // A small tolerance accommodates pointer jitter without treating a pan as a click.
         if (clickDistance <= 4) {
-          selectionChanged = this.tileSelection.select(this.tileHover.hoveredTile);
-          if (selectionChanged) this.onSelectionChange?.(this.tileSelection.selectedTile);
+          const tile = this.tileHover.hoveredTile;
+          if (tile) {
+            const focused = this.tileSelection.selectedTile;
+            if (this.tileSelection.selectedTiles.length === 1 && focused?.id === tile.id) {
+              selectionChanged = this.tileSelection.clear();
+            } else {
+              selectionChanged = this.tileSelection.select(tile);
+            }
+          }
+          if (selectionChanged) this.notifySelectionChange();
         }
       }
     }
-    this.pointerDownPosition = null;
     if (hoverChanged || selectionChanged) this.render();
+  }
+
+  onKeyDown(event) {
+    if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+    const tiles = this.tileSelection.getSelectedTiles();
+    if (!tiles.length) return;
+    event.preventDefault();
+    const delta = event.key === "ArrowUp" ? 1 : -1;
+    const changedTiles = updateTilesProperty(
+      tiles,
+      "elevation",
+      (elevation) => elevation + delta
+    );
+    if (!changedTiles.length) return;
+    this.onElevationChange?.(this.tileSelection.selectedTile, tiles);
+    this.refreshWorldView();
   }
 
   onWheel(event) {
@@ -291,7 +381,7 @@ export class Engine {
   render() {
     this.renderer.render(this.world, this.camera, {
       hoveredTileId: this.tileHover.hoveredTile?.id ?? null,
-      selectedTileId: this.tileSelection.selectedTile?.id ?? null
+      selectedTileIds: this.tileSelection.selectedTiles.map((tile) => tile.id)
     });
   }
 
@@ -316,10 +406,11 @@ export class Engine {
     this.canvas.removeEventListener("pointercancel", this.onPointerEnd);
     this.canvas.removeEventListener("lostpointercapture", this.onPointerEnd);
     this.canvas.removeEventListener("wheel", this.onWheel);
+    this.canvas.removeEventListener("contextmenu", this.onContextMenu);
+    window.removeEventListener("keydown", this.onKeyDown);
     this.canvas.classList?.remove("is-dragging");
-    this.dragPointerId = null;
-    this.pointerDownPosition = null;
+    this.pointerSession = null;
     this.clearHover();
-    if (this.tileSelection.clear()) this.onSelectionChange?.(null);
+    if (this.tileSelection.clear()) this.notifySelectionChange();
   }
 }

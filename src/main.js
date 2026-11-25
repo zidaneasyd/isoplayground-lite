@@ -11,7 +11,8 @@ const inspector = new TileInspector(inspectorRoot, {
 });
 
 engine = new Engine(canvas, CONFIG, {
-  onSelectionChange: (tile) => inspector.setTile(tile)
+  onSelectionChange: (_focusedTile, tiles) => inspector.setTiles(tiles),
+  onElevationChange: () => inspector.syncValues()
 });
 
 engine.start();

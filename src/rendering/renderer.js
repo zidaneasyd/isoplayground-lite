@@ -108,7 +108,7 @@ export class Renderer {
   }
 }
 
-  render(world, camera, { hoveredTileId = null, selectedTileId = null } = {}) {
+  render(world, camera, { hoveredTileId = null, selectedTileId = null, selectedTileIds = null } = {}) {
     const { ctx, config } = this;
     const { width: tileW, height: tileH, elevationStep } = config.tile;
     const zoom = camera.zoom;
@@ -128,12 +128,13 @@ export class Renderer {
     ctx.scale(zoom, zoom);
 
     let hoveredOverlay = null;
-    let selectedOverlay = null;
+    const selectedOverlays = [];
+    const selectedIds = new Set(selectedTileIds ?? (selectedTileId == null ? [] : [selectedTileId]));
 
     for (const tile of world.getTiles()) {
       const { x, y, elevation = 0 } = tile;
       const isHovered = tile.id === hoveredTileId;
-      const isSelected = tile.id === selectedTileId;
+      const isSelected = selectedIds.has(tile.id);
       const p = gridToScreen(x, y, tileW, tileH);
       
       const elevatedY = p.y - elevation * elevationStep;
@@ -166,7 +167,7 @@ this.#traceTileDiamond(p, elevatedY, tileW, tileH);
         hoveredOverlay = { p, elevatedY };
       }
       if (isSelected) {
-        selectedOverlay = { p, elevatedY };
+        selectedOverlays.push({ p, elevatedY });
       }
     }
 
@@ -178,7 +179,7 @@ this.#traceTileDiamond(p, elevatedY, tileW, tileH);
       ctx.stroke();
     }
 
-    if (selectedOverlay) {
+    for (const selectedOverlay of selectedOverlays) {
       this.#traceTileDiamond(selectedOverlay.p, selectedOverlay.elevatedY, tileW, tileH);
       ctx.strokeStyle = config.colors.selectedOutline ?? "#d7c4ff";
       ctx.lineWidth = 2 / zoom;

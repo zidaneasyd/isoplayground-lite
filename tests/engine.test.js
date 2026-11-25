@@ -53,7 +53,7 @@ test("engine wires bounded drag pan, cursor-centered wheel zoom, resize, and cle
     assert.equal(canvas.width, 1280);
     assert.equal(canvas.height, 960);
 
-    listeners.get("pointerdown")({ button: 0, pointerId: 7, clientX: 100, clientY: 100 });
+    listeners.get("pointerdown")({ button: 1, pointerId: 7, clientX: 100, clientY: 100 });
     assert.ok(classNames.has("is-dragging"));
     listeners.get("pointermove")({ pointerId: 7, clientX: 120, clientY: 135 });
     assert.equal(engine.camera.x, 20);
@@ -142,7 +142,7 @@ test("engine keeps drag and cursor-centered zoom aligned when CSS scales the can
     const engine = new Engine(canvas, CONFIG);
     canvas.getBoundingClientRect = () => ({ left: 50, top: 100, width: 320, height: 240 });
 
-    listeners.get("pointerdown")({ button: 0, pointerId: 22, clientX: 200, clientY: 200 });
+    listeners.get("pointerdown")({ button: 1, pointerId: 22, clientX: 200, clientY: 200 });
     listeners.get("pointermove")({ pointerId: 22, clientX: 210, clientY: 195 });
     listeners.get("pointerup")({ pointerId: 22 });
     assert.equal(engine.camera.x, 20);
@@ -201,7 +201,7 @@ test("engine.getTileAtClient resolves pointer position to tile through canvas of
     assert.equal(engine.getTileAtClient(0, 0), null);
 
     // Setelah pan lewat event pointer, hasil konversi mengikuti kamera.
-    listeners.get("pointerdown")({ button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    listeners.get("pointerdown")({ button: 1, pointerId: 1, clientX: 100, clientY: 100 });
     listeners.get("pointermove")({ pointerId: 1, clientX: 140, clientY: 90 });
     listeners.get("pointerup")({ pointerId: 1 });
     assert.equal(engine.camera.x, 40);
@@ -306,7 +306,7 @@ test("engine keeps hover aligned during camera drag and cursor-centered zoom", (
     assert.equal(engine.getHoveredTile(), target);
 
     listeners.get("pointerdown")({
-      button: 0,
+      button: 1,
       pointerId: 12,
       clientX: start.clientX,
       clientY: start.clientY
@@ -388,7 +388,7 @@ test("engine clears the active hover on pointer cancellation", () => {
     const point = getTileClientCenter(engine, canvas, target);
 
     listeners.get("pointerdown")({
-      button: 0,
+      button: 1,
       pointerId: 14,
       ...point
     });
@@ -396,7 +396,7 @@ test("engine clears the active hover on pointer cancellation", () => {
 
     listeners.get("pointercancel")({ pointerId: 14, type: "pointercancel" });
     assert.equal(engine.getHoveredTile(), null);
-    assert.equal(engine.dragPointerId, null);
+    assert.equal(engine.pointerSession, null);
 
     engine.destroy();
   } finally {
@@ -405,7 +405,7 @@ test("engine clears the active hover on pointer cancellation", () => {
   }
 });
 
-test("engine selects tiles on click, preserves selection on pan, and deselects on empty click", () => {
+test("engine selects tiles on click, preserves selection on pan, and ignores empty clicks", () => {
   const originalWindow = globalThis.window;
   globalThis.window = {
     devicePixelRatio: 1,
@@ -438,7 +438,7 @@ test("engine selects tiles on click, preserves selection on pan, and deselects o
 
     const beforePanSelection = engine.getSelectedTile();
     listeners.get("pointerdown")({
-      button: 0, pointerId: 23,
+      button: 1, pointerId: 23,
       clientX: firstPoint.clientX, clientY: firstPoint.clientY
     });
     listeners.get("pointermove")({
@@ -453,10 +453,10 @@ test("engine selects tiles on click, preserves selection on pan, and deselects o
     });
     assert.equal(engine.getSelectedTile(), beforePanSelection, "dragging the camera must not select a tile");
 
-    // Click inside the canvas but outside the world to clear the current selection.
+    // Clicking outside the world preserves the current selection.
     listeners.get("pointerdown")({ button: 0, pointerId: 24, clientX: 51, clientY: 101 });
     listeners.get("pointerup")({ pointerId: 24, type: "pointerup", clientX: 51, clientY: 101 });
-    assert.equal(engine.getSelectedTile(), null);
+    assert.equal(engine.getSelectedTile(), beforePanSelection);
     assert.ok(calls.filter(([name]) => name === "clearRect").length > 0);
 
     engine.destroy();
@@ -505,8 +505,12 @@ test("engine notifies the inspector on selection changes and can refresh after t
   try {
     const { canvas, listeners, calls } = makeCanvas();
     const selectionEvents = [];
+    const selectedTileSnapshots = [];
     const engine = new Engine(canvas, CONFIG, {
-      onSelectionChange: (tile) => selectionEvents.push(tile?.id ?? null)
+      onSelectionChange: (tile, tiles) => {
+        selectionEvents.push(tile?.id ?? null);
+        selectedTileSnapshots.push(tiles);
+      }
     });
     const tile = engine.world.getTile(6, 6);
     const point = getTileClientCenter(engine, canvas, tile);
@@ -515,6 +519,7 @@ test("engine notifies the inspector on selection changes and can refresh after t
     listeners.get("pointerup")({ pointerId: 41, type: "pointerup", ...point });
     assert.equal(engine.getSelectedTile(), tile);
     assert.deepEqual(selectionEvents, [tile.id]);
+    assert.deepEqual(selectedTileSnapshots, [[tile]]);
 
     const beforeRefresh = calls.filter(([name]) => name === "clearRect").length;
     tile.elevation = 2;
@@ -523,13 +528,14 @@ test("engine notifies the inspector on selection changes and can refresh after t
 
     listeners.get("pointerdown")({ button: 0, pointerId: 42, clientX: 51, clientY: 101 });
     listeners.get("pointerup")({ pointerId: 42, type: "pointerup", clientX: 51, clientY: 101 });
-    assert.equal(engine.getSelectedTile(), null);
-    assert.deepEqual(selectionEvents, [tile.id, null]);
+    assert.equal(engine.getSelectedTile(), tile, "empty clicks preserve selection");
+    assert.deepEqual(selectionEvents, [tile.id]);
 
     const pointAfterElevationEdit = getTileClientCenter(engine, canvas, tile);
     listeners.get("pointerdown")({ button: 0, pointerId: 43, ...pointAfterElevationEdit });
     listeners.get("pointerup")({ pointerId: 43, type: "pointerup", ...pointAfterElevationEdit });
-    assert.equal(engine.getSelectedTile(), tile);
+    assert.equal(engine.getSelectedTile(), null, "clicking the sole selected tile again clears it");
+    assert.deepEqual(selectedTileSnapshots.at(-1), []);
     engine.destroy();
     assert.equal(selectionEvents.at(-1), null);
   } finally {
@@ -544,6 +550,124 @@ test("engine rejects an invalid selection callback", () => {
   try {
     const { canvas } = makeCanvas();
     assert.throws(() => new Engine(canvas, CONFIG, { onSelectionChange: true }), TypeError);
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine supports additive and subtractive pointer selection, middle pan, and focused elevation edits", () => {
+  const originalWindow = globalThis.window;
+  const windowListeners = new Map();
+  globalThis.window = {
+    devicePixelRatio: 1,
+    addEventListener: (name, fn) => windowListeners.set(name, fn),
+    removeEventListener: (name) => windowListeners.delete(name)
+  };
+  try {
+    const { canvas, listeners, classNames } = makeCanvas();
+    const elevationSyncs = [];
+    const selectionSyncs = [];
+    const engine = new Engine(canvas, CONFIG, {
+      onSelectionChange: (_focus, tiles) => selectionSyncs.push(tiles),
+      onElevationChange: (focus, tiles) => elevationSyncs.push({ focus, tiles })
+    });
+    const a = engine.world.getTile(4, 4);
+    const b = engine.world.getTile(6, 5);
+    const pa = getTileClientCenter(engine, canvas, a);
+    const pb = getTileClientCenter(engine, canvas, b);
+    const click = (point, { button = 0, shiftKey = false, pointerId = 1 } = {}) => {
+      listeners.get("pointerdown")({ button, shiftKey, pointerId, ...point });
+      listeners.get("pointerup")({ pointerId, type: "pointerup", ...point });
+    };
+
+    click(pa);
+    click(pb, { shiftKey: true, pointerId: 2 });
+    assert.deepEqual(engine.getSelectedTiles(), [a, b]);
+    click(pb, { shiftKey: true, pointerId: 3 });
+    assert.deepEqual(engine.getSelectedTiles(), [a, b], "adding an existing ID is idempotent");
+    assert.deepEqual(selectionSyncs, [[a], [a, b]]);
+    a.elevation = 2;
+    b.elevation = 4;
+    windowListeners.get("keydown")({ key: "ArrowUp", repeat: true, preventDefault() {} });
+    assert.deepEqual([a.elevation, b.elevation], [3, 5]);
+    click(getTileClientCenter(engine, canvas, a), { button: 2, shiftKey: true, pointerId: 4 });
+    assert.deepEqual(engine.getSelectedTiles(), [b]);
+    assert.deepEqual(selectionSyncs.at(-1), [b]);
+    assert.equal(engine.getSelectedTile(), b);
+
+    const beforePan = { x: engine.camera.x, y: engine.camera.y };
+    listeners.get("pointerdown")({ button: 1, pointerId: 5, ...pb });
+    assert.ok(classNames.has("is-dragging"));
+    listeners.get("pointermove")({ pointerId: 5, clientX: pb.clientX + 16, clientY: pb.clientY + 12 });
+    listeners.get("pointerup")({ pointerId: 5, type: "pointerup" });
+    assert.ok(engine.camera.x !== beforePan.x || engine.camera.y !== beforePan.y);
+    assert.deepEqual(engine.getSelectedTiles(), [b]);
+    assert.ok(!classNames.has("is-dragging"));
+
+    b.elevation = 0;
+    let prevented = false;
+    windowListeners.get("keydown")({ key: "ArrowDown", repeat: true, preventDefault: () => { prevented = true; } });
+    assert.equal(prevented, true);
+    assert.equal(b.elevation, -1);
+    assert.equal(a.elevation, 3);
+    assert.deepEqual(elevationSyncs.map(({ focus }) => focus), [b, b]);
+    assert.deepEqual(elevationSyncs.map(({ tiles }) => tiles), [[a, b], [b]]);
+    const cameraBeforeLeftDrag = { x: engine.camera.x, y: engine.camera.y };
+    listeners.get("pointerdown")({ button: 0, pointerId: 6, ...pb });
+    listeners.get("pointermove")({ pointerId: 6, clientX: pb.clientX + 20, clientY: pb.clientY + 10 });
+    listeners.get("pointerup")({ pointerId: 6, type: "pointerup", clientX: pb.clientX + 20, clientY: pb.clientY + 10 });
+    assert.deepEqual({ x: engine.camera.x, y: engine.camera.y }, cameraBeforeLeftDrag);
+    engine.destroy();
+  } finally {
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("engine replaces selection normally and processes each tile crossed by additive and subtractive drags", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = { devicePixelRatio: 1, addEventListener() {}, removeEventListener() {} };
+  try {
+    const { canvas, listeners } = makeCanvas();
+    const engine = new Engine(canvas, CONFIG);
+    const first = engine.world.getTile(2, 2);
+    const start = engine.world.getTile(3, 3);
+    const end = engine.world.getTile(8, 8);
+    const point = (tile) => getTileClientCenter(engine, canvas, tile);
+    const click = (tile, pointerId, options = {}) => {
+      const at = point(tile);
+      listeners.get("pointerdown")({ button: options.button ?? 0, shiftKey: options.shiftKey ?? false, pointerId, ...at });
+      listeners.get("pointerup")({ pointerId, type: "pointerup", ...at });
+    };
+    click(first, 1);
+    const from = point(start);
+    const to = point(end);
+    listeners.get("pointerdown")({ button: 0, shiftKey: true, pointerId: 2, ...from });
+    listeners.get("pointermove")({ pointerId: 2, ...to });
+    listeners.get("pointerup")({ pointerId: 2, type: "pointerup", ...to });
+    assert.ok(engine.getSelectedTiles().some((tile) => tile.id === start.id));
+    assert.ok(engine.getSelectedTiles().some((tile) => tile.id === end.id));
+    assert.equal(new Set(engine.getSelectedTiles().map((tile) => tile.id)).size, engine.getSelectedTiles().length);
+
+    click(end, 3);
+    assert.deepEqual(engine.getSelectedTiles(), [end], "ordinary click replaces a multi-selection");
+    click(end, 4);
+    assert.deepEqual(engine.getSelectedTiles(), [], "clicking the sole selected tile toggles it off");
+
+    click(start, 5);
+    click(end, 6, { shiftKey: true });
+    const endPoint = point(end);
+    const startPoint = point(start);
+    listeners.get("pointerdown")({ button: 2, shiftKey: true, pointerId: 7, ...endPoint });
+    listeners.get("pointermove")({ pointerId: 7, ...startPoint });
+    listeners.get("pointerup")({ pointerId: 7, type: "pointerup", ...startPoint });
+    assert.deepEqual(engine.getSelectedTiles(), [], "right drag removes each crossed selected tile");
+
+    let prevented = false;
+    listeners.get("contextmenu")({ preventDefault: () => { prevented = true; } });
+    assert.equal(prevented, true);
+    engine.destroy();
   } finally {
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;

@@ -21,7 +21,7 @@ body {
   width: 100%;
   height: 100%;
   touch-action: none;
-  cursor: grab;
+  cursor: default;
 }
 
 #world.is-dragging {
@@ -289,8 +289,16 @@ body {
   background: #3478f6;
 }
 
+.walkable-switch input:indeterminate + .walkable-switch__track {
+  background: #3478f6;
+}
+
 .walkable-switch input:checked + .walkable-switch__track::after {
   transform: translateX(14px);
+}
+
+.walkable-switch input:indeterminate + .walkable-switch__track::after {
+  transform: translateX(7px);
 }
 
 .walkable-switch input:focus-visible + .walkable-switch__track {
