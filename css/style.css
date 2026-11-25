@@ -177,7 +177,7 @@ body {
 .elevation-control {
   display: flex;
   align-items: center;
-  height: 24px;
+  height: 34px;
   border: 1px solid #414141;
   border-radius: 6px;
   overflow: hidden;
@@ -188,6 +188,7 @@ body {
   display: grid;
   width: 34px;
   height: 32px;
+  flex: 0 0 34px;
   place-items: center;
   padding: 0;
   border: 0;
