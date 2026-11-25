@@ -8,6 +8,224 @@
 </head>
 <body>
   <canvas id="world" aria-label="Dunia isometrik"></canvas>
+
+  <aside id="tile-inspector" class="tile-inspector" aria-labelledby="tile-inspector-title">
+    <header class="tile-inspector__header">
+      <div>
+        <h1 id="tile-inspector-title">Tile Inspector</h1>
+      </div>
+      <span class="tile-inspector__status" data-inspector-status aria-live="polite">NO TILE SELECTED</span>
+    </header>
+
+    <div class="tile-inspector__empty" data-inspector-empty>
+      <span class="tile-inspector__empty-icon" aria-hidden="true">◇</span>
+      <strong>No tile selected</strong>
+      <p>Klik salah satu diamond pada grid untuk melihat dan mengedit datanya.</p>
+    </div>
+
+    <section
+  class="tile-inspector__content"
+  data-inspector-content
+  hidden
+  aria-label="Selected tile properties"
+>
+  <div class="tile-inspector__group-heading">TILE</div>
+
+  <section class="tile-inspector__section" aria-label="Tile identity">
+    <button
+      class="tile-inspector__section-toggle"
+      type="button"
+      data-inspector-toggle="identity"
+      aria-expanded="false"
+      aria-controls="tile-identity-body"
+    >
+      <span class="tile-inspector__section-label">
+        <svg
+          class="tile-inspector__section-chevron"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.4"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+        <span>IDENTITY</span>
+      </span>
+    </button>
+
+    <div
+      class="tile-inspector__section-body"
+      id="tile-identity-body"
+      data-inspector-body="identity"
+      hidden
+    >
+      <div class="tile-inspector__identity">
+        <span class="tile-inspector__field-label">TILE ID</span>
+        <strong data-value="id">—</strong>
+      </div>
+
+      <div class="tile-inspector__coordinates">
+        <span class="tile-inspector__field-label">GRID COORDINATES</span>
+        <strong data-value="coordinates">—</strong>
+      </div>
+    </div>
+  </section>
+
+  <section class="tile-inspector__section" aria-label="Tile properties">
+    <button
+      class="tile-inspector__section-toggle"
+      type="button"
+      data-inspector-toggle="properties"
+      aria-expanded="false"
+      aria-controls="tile-properties-body"
+    >
+      <span class="tile-inspector__section-label">
+        <svg
+          class="tile-inspector__section-chevron"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2.4"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <polyline points="6 9 12 15 18 9"></polyline>
+        </svg>
+        <span>PROPERTIES</span>
+      </span>
+    </button>
+
+    <div
+      class="tile-inspector__section-body"
+      id="tile-properties-body"
+      data-inspector-body="properties"
+      hidden
+    >
+      <div class="tile-inspector__field tile-inspector__elevation">
+        <span>
+          <strong>Elevation</strong>
+          <small>Ketinggian tile dalam unit dunia</small>
+        </span>
+
+        <div class="elevation-control">
+          <button
+            class="elevation-control__button"
+            type="button"
+            data-elevation-decrease
+            aria-label="Kurangi elevation"
+            disabled
+          >−</button>
+
+          <output
+            class="elevation-control__value"
+            data-input="elevation"
+            aria-live="polite"
+          >0</output>
+
+          <button
+            class="elevation-control__button"
+            type="button"
+            data-elevation-increase
+            aria-label="Tambah elevation"
+            disabled
+          >+</button>
+        </div>
+      </div>
+
+<div class="tile-inspector__field">
+  <span>
+    <strong>Terrain</strong>
+    <small>Identitas permukaan tile</small>
+  </span>
+
+  <div class="terrain-select" data-terrain-select>
+    <button
+      class="terrain-select__trigger"
+      type="button"
+      data-terrain-trigger
+      aria-haspopup="menu"
+      aria-expanded="false"
+      disabled
+    >
+      <span data-terrain-value>default</span>
+
+      <svg
+        class="terrain-select__arrow"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        stroke-width="2.2"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+        aria-hidden="true"
+      >
+        <polyline points="6 9 12 15 18 9"></polyline>
+      </svg>
+    </button>
+
+    <div
+      class="terrain-select__menu"
+      data-terrain-menu
+      role="menu"
+      aria-label="Terrain options"
+      hidden
+    >
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="true"
+        data-terrain-option="default"
+      >default</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="grass"
+      >grass</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="water"
+      >water</button>
+
+      <button
+        type="button"
+        class="terrain-select__option"
+        role="menuitemradio"
+        aria-checked="false"
+        data-terrain-option="stone"
+      >stone</button>
+    </div>
+  </div>
+</div>
+
+<label class="tile-inspector__toggle">
+  <span>
+    <strong>Walkable</strong>
+    <small>Tile dapat dilalui</small>
+  </span>
+
+  <span class="walkable-switch">
+    <input
+      data-input="walkable"
+      type="checkbox"
+      role="switch"
+      disabled
+    >
+    <span class="walkable-switch__track"></span>
+  </span>
+</label>
+    </div>
+  </section>
+</section>
+  </aside>
+
   <script type="module" src="./src/main.js"></script>
 </body>
 </html>

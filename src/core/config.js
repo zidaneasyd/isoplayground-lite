@@ -6,16 +6,22 @@ export const CONFIG = {
   },
 
   tile: {
-    width: 64,
-    height: 32,
-    elevationStep: 16
-  },
+  width: 64,
+  height: 32,
+  elevationStep: 8
+},
 
-  colors: {
-    background: "#141414",
-    ground: "#383838",
-    grid: "#4c4c4c"
-  },
+colors: {
+  background: "#141414",
+  ground: "#383838",
+  grid: "#4c4c4c",
+  hover: "#8f7438",
+  hoverOutline: "#f0d58a",
+  selected: "#6f5a9e",
+  selectedOutline: "#d7c4ff",
+  sideRight: "#2d2d2d",
+  sideLeft: "#252525"
+},
 
   camera: {
     x: 0,

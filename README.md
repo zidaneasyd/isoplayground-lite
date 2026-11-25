@@ -1,6 +1,6 @@
-# Isometric World Engine — Level 1
+# Isometric World Engine — Level 2: Interactive Grid Foundations
 
-Fondasi engine dunia isometrik ringan berbasis HTML Canvas 2D dan JavaScript ES Modules.
+Fondasi engine dunia isometrik berbasis HTML Canvas 2D dan JavaScript ES Modules.
 
 ## Menjalankan
 
@@ -17,7 +17,10 @@ Lalu buka alamat lokal yang diberikan server.
 
 - **Pan:** klik/tahan lalu geser mouse, atau geser dengan sentuhan. Pergerakan dibatasi agar setidaknya satu tile diamond tetap terlihat penuh.
 - **Zoom:** gunakan scroll wheel. Titik dunia di bawah kursor dipertahankan selama batas pan memungkinkan.
-- **Grid thickness:** garis grid tetap setebal 1 CSS pixel pada semua tingkat zoom.
+- **Hover:** arahkan pointer ke tile untuk menyorot tile teratas yang berada di bawah pointer.
+- **Selection:** klik kiri tile untuk memilihnya. Klik area kosong di dalam Canvas untuk membatalkan pilihan. Drag kamera tidak mengubah pilihan.
+- **Tile Inspector:** panel kanan menampilkan ID, koordinat grid, elevation, terrain, dan walkable dari tile terpilih. Elevation, terrain, dan walkable dapat diedit; perubahan diterapkan langsung ke data tile.
+- **Grid thickness:** garis grid tetap setebal 1 CSS pixel pada semua tingkat zoom, kecuali tile hover/selected yang memakai outline interaksi.
 - **Batas zoom:** 0,35× sampai 3×.
 
 ## Fondasi saat ini
@@ -25,15 +28,20 @@ Lalu buka alamat lokal yang diberikan server.
 - Canvas responsif dengan dukungan device pixel ratio (maksimal 2×).
 - Grid dunia 12 × 12.
 - Tile diamond 64 × 32.
-- Konversi koordinat grid ke isometrik.
+- Konversi grid-ke-isometrik dan screen-to-grid, termasuk pan, zoom, viewport, serta elevasi per tile.
 - Rendering tile dalam urutan diagonal.
-- Permukaan abu-abu dengan garis grid abu-abu gelap.
-- Ketebalan garis grid tidak ikut membesar atau mengecil saat zoom.
-- Elevation dasar seragam per dunia.
+- Setiap tile memiliki ID stabil, koordinat `x` dan `y`, `elevation`, `terrain`, serta `walkable`.
+- Data tile dapat diakses dengan `world.getTile(x, y)` atau `world.getTileById(id)`; keduanya mengembalikan referensi tile persisten.
+- ID dan koordinat tile tidak dapat diubah; elevation, terrain, dan walkable dapat dimutasi dengan validasi tipe/nilai.
+- Renderer membaca elevation masing-masing tile.
+- Tile hover mendeteksi tile di bawah pointer menggunakan elevasi individual dan urutan render untuk menangani diamond yang bertumpuk.
+- Tile selection menyimpan referensi persistent tile dan memisahkan keadaan selected dari hover.
+- Tile Inspector menampilkan data tile terpilih dan menyediakan editor tervalidasi untuk elevation, terrain, serta walkable.
+- Perubahan properti dari Inspector memicu pembaruan render; elevation turut memperbarui perhitungan hover di posisi pointer terakhir.
 - Game loop dengan delta time yang dibatasi dan pembatalan frame saat dihentikan.
 - Kamera dengan pan terbatas dan zoom berbasis kursor.
 
-Terrain berbeda, elevation per tile, object placement, collision, serta penyimpanan dunia belum termasuk tahap ini.
+Terrain dan walkable saat ini masih berupa data tile; aturan navigasi, collision, serta perilaku gameplay belum diimplementasikan. Object placement dan penyimpanan dunia juga belum termasuk Level 2 ini.
 
 ## Pengujian
 
